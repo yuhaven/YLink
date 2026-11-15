@@ -78,15 +78,23 @@ impl PluginHost {
             return Err(HostError::MissingEntry(entry));
         }
 
-        let mut child = Command::new(&entry)
+        // CREATE_NO_WINDOW: the host is a GUI app, so spawning a console
+        // program would otherwise flash a console window at startup.
+        let mut command = Command::new(&entry);
+        command
             .args(&self.manifest.args)
             .current_dir(&self.manifest.root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = command
             .spawn()
             .map_err(|e| HostError::Spawn(entry.clone(), e.to_string()))?;
-
         let stdin = child.stdin.take().expect("stdin piped");
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");

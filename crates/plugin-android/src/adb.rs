@@ -76,11 +76,18 @@ pub fn list_devices(adb: &Path) -> Result<Vec<Device>, String> {
     let file = std::fs::File::create(&out_path)
         .map_err(|e| format!("cannot create {}: {e}", out_path.display()))?;
 
-    let mut child = Command::new(adb)
+    let mut command = Command::new(adb);
+    command
         .args(["devices", "-l"])
         .stdin(Stdio::null())
         .stdout(Stdio::from(file))
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = command
         .spawn()
         .map_err(|e| format!("cannot run {}: {e}", adb.display()))?;
 

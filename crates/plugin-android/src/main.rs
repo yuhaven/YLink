@@ -1,3 +1,4 @@
+﻿#![cfg_attr(windows, windows_subsystem = "windows")]
 //! Android plugin: speaks `docs/plugin-api.md` over stdio and drives scrcpy.
 //!
 //! Responsibilities are deliberately narrow:
@@ -8,6 +9,7 @@
 //! It never renders video and never touches the screen.
 
 mod adb;
+mod overlay;
 mod scrcpy;
 mod window;
 
@@ -188,12 +190,53 @@ fn start_session(id: Value, params: Value) {
         .get("settings")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let mut window: Option<scrcpy::WindowSpec> = params
+    let window: Option<scrcpy::WindowSpec> = params
         .get("window")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    // A landscape session needs a landscape window; the host only computes a
-    // portrait rectangle, so recompute it here.
+    let cfg = Config {
+        device_id: device_id.to_string(),
+        settings,
+        window,
+    };
+
+    match launch(&cfg) {
+        Ok(sid) => {
+            *config().lock().unwrap() = Some(cfg);
+            reply(id, json!({"sessionId": sid}));
+            emit(
+                "session.state",
+                json!({"sessionId": sid, "state": "connecting"}),
+            );
+        }
+        Err(err) => reply_error(
+            id,
+            "E_ENGINE_FAILED",
+            format!("cannot start scrcpy: {err}"),
+            None,
+        ),
+    }
+}
+
+#[derive(Clone)]
+struct Config {
+    device_id: String,
+    settings: scrcpy::Settings,
+    window: Option<scrcpy::WindowSpec>,
+}
+
+static CONFIG: OnceLock<Mutex<Option<Config>>> = OnceLock::new();
+
+fn config() -> &'static Mutex<Option<Config>> {
+    CONFIG.get_or_init(|| Mutex::new(None))
+}
+
+/// Spawn the engine for a config and wire up waiter, overlay and pinning.
+fn launch(cfg: &Config) -> Result<String, String> {
+    let (scrcpy_path, _adb) = engine_paths();
+    let settings = cfg.settings.clone();
+    let mut window = cfg.window.clone();
+
     if settings.orientation == "landscape" {
         if let Some((x, y, width, height)) = landscape_rect() {
             window = Some(scrcpy::WindowSpec {
@@ -206,64 +249,79 @@ fn start_session(id: Value, params: Value) {
             });
         }
     }
-    // The host always asks for topmost; the user's setting wins.
     if let Some(w) = window.as_mut() {
         w.always_on_top = settings.always_on_top;
     }
 
-    let title = format!("CastPane · {device_id}");
-    let args = scrcpy::build_args(device_id, &title, &settings, window.as_ref());
+    let title = format!("CastPane - {}", cfg.device_id);
+    let args = scrcpy::build_args(&cfg.device_id, &title, &settings, window.as_ref());
+    let child = scrcpy::spawn(&scrcpy_path, &args).map_err(|e| e.to_string())?;
 
-    match scrcpy::spawn(&scrcpy, &args) {
-        Ok(child) => {
-            let sid = format!("{device_id}-{}", now_millis());
-            let pid = child.id();
-            let child = Arc::new(Mutex::new(child));
-            let stop = Arc::new(AtomicBool::new(false));
+    let sid = format!("{}-{}", cfg.device_id, now_millis());
+    let pid = child.id();
+    let child = Arc::new(Mutex::new(child));
+    let stop = Arc::new(AtomicBool::new(false));
 
-            *session().lock().unwrap() = Some(Running {
-                id: sid.clone(),
-                child: Arc::clone(&child),
-                stop: Arc::clone(&stop),
+    *session().lock().unwrap() = Some(Running {
+        id: sid.clone(),
+        child: Arc::clone(&child),
+        stop: Arc::clone(&stop),
+    });
+
+    spawn_waiter(sid.clone(), child);
+
+    #[cfg(windows)]
+    {
+        overlay::attach(pid);
+        if let Some(w) = window.as_ref() {
+            let spec_json = json!({
+                "x": w.x,
+                "y": w.y,
+                "width": w.width,
+                "height": w.height,
+                "alwaysOnTop": w.always_on_top,
             });
+            if let Some(spec) = window::spec_from_json(&spec_json, settings.lock_position) {
+                let stop = Arc::clone(&stop);
+                std::thread::spawn(move || window::enforce(pid, spec, stop));
+            }
+        }
+    }
 
-            reply(id, json!({"sessionId": sid}));
+    Ok(sid)
+}
+
+/// Switch capture orientation and restart the engine: scrcpy cannot rotate a
+/// running session when the app on the phone is locked to one orientation.
+fn toggle_orientation() {
+    let Some(mut cfg) = config().lock().unwrap().clone() else {
+        return;
+    };
+    cfg.settings.orientation = if cfg.settings.orientation == "landscape" {
+        "portrait".to_string()
+    } else {
+        "landscape".to_string()
+    };
+
+    if let Some(running) = session().lock().unwrap().take() {
+        running.stop.store(true, Ordering::Relaxed);
+        if let Ok(mut child) = running.child.lock() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    match launch(&cfg) {
+        Ok(sid) => {
+            *config().lock().unwrap() = Some(cfg);
             emit(
                 "session.state",
                 json!({"sessionId": sid, "state": "connecting"}),
             );
-
-            spawn_waiter(sid, child);
-
-            // Frameless, pinned, topmost: scrcpy's own flag left the caption
-            // in place, so the plugin owns the window from here on.
-            #[cfg(windows)]
-            {
-                let lock_position = params
-                    .get("settings")
-                    .and_then(|settings| settings.get("lockPosition"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                if let Some(w) = window.as_ref() {
-                    let spec_json = json!({
-                        "x": w.x,
-                        "y": w.y,
-                        "width": w.width,
-                        "height": w.height,
-                        "alwaysOnTop": w.always_on_top,
-                    });
-                    if let Some(spec) = window::spec_from_json(&spec_json, lock_position) {
-                        let stop = Arc::clone(&stop);
-                        std::thread::spawn(move || window::enforce(pid, spec, stop));
-                    }
-                }
-            }
         }
-        Err(err) => reply_error(
-            id,
-            "E_ENGINE_FAILED",
-            format!("启动 scrcpy 失败：{err}"),
-            None,
+        Err(err) => emit(
+            "log",
+            json!({"level": "error", "message": format!("orientation switch failed: {err}")}),
         ),
     }
 }
@@ -386,6 +444,17 @@ fn kill_session() {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let (click_tx, click_rx) = std::sync::mpsc::channel::<()>();
+        overlay::init(click_tx);
+        std::thread::spawn(move || {
+            while click_rx.recv().is_ok() {
+                toggle_orientation();
+            }
+        });
+    }
+
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };

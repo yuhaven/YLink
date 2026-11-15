@@ -1,3 +1,4 @@
+﻿#![cfg_attr(windows, windows_subsystem = "windows")]
 //! AirPlay plugin: speaks `docs/plugin-api.md` and launches uxplay.
 //!
 //! AirPlay has no "scan for senders": this plugin *is* the receiver. So

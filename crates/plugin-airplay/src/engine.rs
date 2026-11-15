@@ -36,11 +36,17 @@ pub fn find_engine() -> Option<PathBuf> {
 
 /// Start the receiver. stderr is inherited so its logs reach the host.
 pub fn spawn(engine: &Path) -> std::io::Result<Child> {
-    Command::new(engine)
+    let mut command = Command::new(engine);
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
+        .stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command.spawn()
 }
 
 #[cfg(test)]

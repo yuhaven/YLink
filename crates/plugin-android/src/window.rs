@@ -1,4 +1,4 @@
-//! Optional position pinning for the scrcpy window.
+﻿//! Optional position pinning for the scrcpy window.
 //!
 //! The window keeps its native Windows frame: title bar, minimise, maximise and
 //! close all behave the way users expect, and dragging works out of the box.
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
 };
 
 #[derive(Debug, Clone, Copy)]

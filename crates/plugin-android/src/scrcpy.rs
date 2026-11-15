@@ -43,6 +43,9 @@ pub struct Settings {
     /// casting.
     #[serde(default)]
     pub always_on_top: bool,
+    /// Pin the window position (dragging snaps back). Off by default.
+    #[serde(default)]
+    pub lock_position: bool,
 }
 
 impl Default for Settings {
@@ -55,6 +58,7 @@ impl Default for Settings {
             lock_orientation: true,
             orientation: default_orientation(),
             always_on_top: false,
+            lock_position: false,
         }
     }
 }
@@ -125,14 +129,21 @@ pub fn build_args(
 }
 
 pub fn spawn(scrcpy: &Path, args: &[String]) -> std::io::Result<Child> {
-    Command::new(scrcpy)
+    let mut command = Command::new(scrcpy);
+    command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         // scrcpy logs go to the plugin's stderr, which the host turns into
         // `log` notifications.
-        .stderr(Stdio::inherit())
-        .spawn()
+        .stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // No console window for the engine either.
+        command.creation_flags(0x0800_0000);
+    }
+    command.spawn()
 }
 
 #[cfg(test)]

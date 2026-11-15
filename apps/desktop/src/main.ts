@@ -165,23 +165,6 @@ function renderControl(
   }
 }
 
-/** Restart the running session so a settings change applies immediately. */
-async function restartCast(pluginId: string, values: Record<string, unknown>) {
-  if (!active) return;
-  const { deviceId } = active;
-  setStatus("正在切换画面方向…");
-  try {
-    await invoke("stop_cast", { id: pluginId });
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    await invoke("connect", { id: pluginId, deviceId, settings: values });
-    setStatus("画面方向已切换");
-  } catch (err) {
-    setStatus(`切换失败：${err}`);
-    active = null;
-    for (const button of castButtons) button.disabled = false;
-  }
-}
-
 /** Poll a plugin forever: session state to the status bar, the rest to the log. */
 function startPolling(pluginId: string, report: (line: string) => void) {
   window.setInterval(async () => {
@@ -313,11 +296,8 @@ async function renderCard(plugin: PluginInfo) {
     }
   };
 
-  const onSettingChanged = (key: string) => {
+  const onSettingChanged = (_key: string) => {
     saveValues(plugin.id, values);
-    if (key === "orientation" && active && active.pluginId === plugin.id) {
-      void restartCast(plugin.id, values);
-    }
   };
 
   for (const item of plugin.panel ?? []) {
