@@ -38,7 +38,7 @@ $Engines = @{
         Label    = 'scrcpy'
         Version  = 'v5.0.1'
         Url      = 'https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip'
-        Sha256   = 'B12A2C4EE8BE317422451FC7DC1F8EE20A71B5EA7EF9AD73DDD825A25316227A5'
+        Sha256   = 'B12A2C4EE8BE317422451FC7DCF8EE20A71B5EA7EF9AD73DDD825A25316227A5'
         Dest     = 'plugins/android/bin/scrcpy'
     }
     uxplay = @{
@@ -50,6 +50,30 @@ $Engines = @{
     }
 }
 
+function Get-RemoteFile {
+    param([string]$Url, [string]$OutFile)
+
+    # On some networks github.com resolves to a black-holed IP and the
+    # schannel revocation check cannot reach its CRL server. Forcing a known
+    # GitHub edge IP and skipping the revocation lookup fixes both:
+    #   curl: (28) connect timeout, or
+    #   curl: (35) CRYPT_E_REVOCATION_OFFLINE
+    $edge = '20.27.177.113'
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+
+    if ($curl) {
+        & curl.exe -L --ssl-no-revoke --resolve "github.com:443:$edge" `
+            --max-time 1800 --retry 3 -C - -o $OutFile $Url
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Host "    curl exited $LASTEXITCODE, retrying without the pinned IP"
+        & curl.exe -L --ssl-no-revoke --max-time 1800 --retry 3 -C - -o $OutFile $Url
+        if ($LASTEXITCODE -eq 0) { return }
+    }
+
+    Write-Host "    falling back to Invoke-WebRequest"
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -TimeoutSec 900 -UseBasicParsing
+}
+
 function Install-Engine {
     param([hashtable]$Spec)
 
@@ -58,7 +82,7 @@ function Install-Engine {
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ("castpane-" + [guid]::NewGuid().ToString('N') + ".zip")
 
     try {
-        Invoke-WebRequest -Uri $Spec.Url -OutFile $tmp -TimeoutSec 900 -UseBasicParsing
+        Get-RemoteFile -Url $Spec.Url -OutFile $tmp
         $actual = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash
         if ($actual -ne $Spec.Sha256) {
             throw "sha256 mismatch for $($Spec.Label): expected $($Spec.Sha256), got $actual"

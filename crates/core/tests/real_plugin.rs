@@ -22,21 +22,11 @@ fn talks_to_the_packaged_android_plugin() {
     host.call("discover.start", serde_json::json!({}))
         .expect("discover.start");
 
-    // With no device attached we still expect the plugin to say *something*
-    // (a log line about missing adb) rather than stay silent.
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let mut saw_event = false;
-    while Instant::now() < deadline && !saw_event {
-        for event in host.drain_events() {
-            if matches!(event, PluginEvent::Notification { .. }) {
-                saw_event = true;
-            }
-        }
-        if !saw_event {
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    }
-    assert!(saw_event, "plugin emitted no notification at all");
+    // With adb present and no device attached the plugin emits nothing; with
+    // adb missing it emits a log line. Both are valid, so just drain and make
+    // sure the plugin stayed responsive afterwards.
+    std::thread::sleep(Duration::from_millis(300));
+    let _ = host.drain_events();
 
     // Declarative panel buttons call `action.<name>`; diagnose must answer
     // with a checks array the UI can render.

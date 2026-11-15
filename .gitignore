@@ -29,3 +29,6 @@ apps/desktop/src-tauri/gen/
 
 # packaging output
 /dist/
+
+# downloaded engine archives
+/build/
