@@ -283,6 +283,26 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Make `--diagnose` usable from a terminal.
+///
+/// Release builds are compiled as a GUI subsystem binary, so they start with
+/// no console: attach to the caller's and switch it to UTF-8, otherwise the
+/// Chinese output is mojibake or simply invisible.
+#[cfg(windows)]
+fn prepare_console() {
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, SetConsoleCP, SetConsoleOutputCP, ATTACH_PARENT_PROCESS,
+    };
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS); // no-op when a console exists
+        SetConsoleOutputCP(65001);
+        SetConsoleCP(65001);
+    }
+}
+
+#[cfg(not(windows))]
+fn prepare_console() {}
+
 /// Headless self-check used by `CastPane.exe --diagnose` and by CI.
 ///
 /// Starts every available plugin, asks it to diagnose itself, prints the
@@ -290,6 +310,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
 /// Deliberately does not touch the GUI, so it is safe to run in a terminal
 /// while the app (or a game) is running.
 pub fn headless_diagnose() -> i32 {
+    prepare_console();
     let plugins = load_plugins();
     println!(
         "CastPane diagnose — {} plugin(s) from {}",

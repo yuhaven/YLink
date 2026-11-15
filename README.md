@@ -74,7 +74,12 @@ powershell -ExecutionPolicy Bypass -File scripts\fetch-engines.ps1 -Only android
 
 脚本按**固定版本 + SHA-256** 下载 scrcpy v5.0.1 与 uxplay-windows 2.0.0.1736，解压到 `plugins/*/bin/`（该目录不入库）。
 
-如果 GitHub 直连被阻断（部分网络下 `github.com` release 下载会失败，`raw.githubusercontent.com` 正常），手动下载同名 zip 后解压到对应目录即可：
+### 国内网络的两个坑
+
+1. **DNS 污染**：`github.com` 可能被解析到 `20.6.7.17` 这类黑洞 IP，表现为连接超时。脚本用 `--resolve` 固定到可用的边缘 IP（如 `20.27.177.113`）。
+2. **证书吊销检查失败**：`curl: (35) CRYPT_E_REVOCATION_OFFLINE`，CRL 服务器不可达导致 TLS 直接失败。脚本加 `--ssl-no-revoke` 跳过。
+
+还有一个陷阱：`release-assets.githubusercontent.com` 的短时速度可以是 `github.com` 的十倍，但持续大文件下载会被限速到几 KB/s。100 MB 以上的 uxplay 建议手动下载：
 
 - scrcpy → `plugins/android/bin/scrcpy/`（需要 `scrcpy.exe`、`adb.exe`、`scrcpy-server`）
 - uxplay-windows → `plugins/airplay/bin/uxplay/`
