@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -118,6 +118,26 @@ fn place(hwnd: HWND, x: i32, y: i32, width: u32, height: u32, topmost: bool) {
             width as i32,
             height as i32,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
+/// Apply the always-on-top flag to a running window without moving it.
+pub fn set_topmost(pid: u32, topmost: bool) {
+    let Some(hwnd) = find_window(pid) else { return };
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            if topmost {
+                HWND_TOPMOST
+            } else {
+                std::ptr::null_mut()
+            },
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
     }
 }

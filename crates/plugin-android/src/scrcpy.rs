@@ -1,4 +1,4 @@
-//! scrcpy command line construction and launch.
+﻿//! scrcpy command line construction and launch.
 //!
 //! The window is positioned by scrcpy itself (`--window-x/y/width/height`),
 //! so this plugin never needs a native window handle.
@@ -20,7 +20,7 @@ fn default_orientation() -> String {
     "portrait".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(default = "default_max_size")]

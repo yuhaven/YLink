@@ -231,6 +231,11 @@ async fn connect(
             size.height.saturating_sub(80),
         );
         let spec = WindowSpec::portrait(work);
+        // Put the cast at the right edge so it does not cover the console in
+        // the middle of the screen.
+        let x = position.x + size.width as i32 - spec.rect.width as i32 - 40;
+        let mut spec = spec;
+        spec.rect.x = x.max(position.x);
         let window = json!({
             "x": spec.rect.x,
             "y": spec.rect.y,
@@ -274,6 +279,29 @@ async fn stop_cast(id: String, app: tauri::AppHandle) -> Result<Value, String> {
             .find(|p| p.manifest().id == id)
             .ok_or_else(|| format!("plugin `{id}` not found"))?;
         host.call("session.stop", json!({}))
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Push settings to a running session. The plugin applies window-level flags
+/// live and restarts the engine when capture parameters change.
+#[tauri::command]
+async fn apply_settings(
+    id: String,
+    settings: Value,
+    app: tauri::AppHandle,
+) -> Result<Value, String> {
+    blocking(app, move |state| {
+        let mut plugins = lock_plugins(state);
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
+        if !host.is_running() {
+            return Ok(json!({"ok": true, "applied": "no-session"}));
+        }
+        host.call("settings.apply", json!({ "settings": settings }))
             .map_err(|e| e.to_string())
     })
     .await
@@ -502,6 +530,7 @@ pub fn run() {
             discover,
             connect,
             stop_cast,
+            apply_settings,
             action,
             poll_events,
             load_settings,

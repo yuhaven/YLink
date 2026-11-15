@@ -50,6 +50,28 @@ const statusEl = document.querySelector<HTMLElement>("#status")!;
 let active: { pluginId: string; deviceId: string } | null = null;
 /** Cast buttons, re-enabled whenever a session stops. */
 const castButtons = new Set<HTMLButtonElement>();
+/** True while a settings change is restarting the session on purpose. */
+let restarting = false;
+let applyTimer: number | undefined;
+
+/** Push settings to the running session, debounced for sliders. */
+function scheduleApply(pluginId: string, values: Record<string, unknown>) {
+  if (!active || active.pluginId !== pluginId) return;
+  window.clearTimeout(applyTimer);
+  applyTimer = window.setTimeout(async () => {
+    restarting = true;
+    try {
+      const result = await invoke<{ applied?: string }>("apply_settings", {
+        id: pluginId,
+        settings: values,
+      });
+      setStatus(result?.applied === "restart" ? "正在应用设置…" : "设置已应用");
+    } catch (err) {
+      restarting = false;
+      setStatus(`应用设置失败：${err}`);
+    }
+  }, 250);
+}
 
 function setStatus(text: string) {
   statusEl.textContent = text;
@@ -174,11 +196,16 @@ function startPolling(pluginId: string, report: (line: string) => void) {
         if (msg.method === "session.state") {
           const state = msg.params.state as string;
           setStatus(`会话：${state}`);
+          if (state === "streaming") {
+            restarting = false;
+          }
           if (state === "stopped" || state === "error") {
             // The cast window was closed (or the engine died): the device is
             // free again, so let the user cast without restarting the app.
-            active = null;
-            for (const button of castButtons) button.disabled = false;
+            if (!restarting) {
+              active = null;
+              for (const button of castButtons) button.disabled = false;
+            }
           }
         } else if (msg.method === "log") {
           report(`· ${msg.params.message as string}`);
@@ -298,6 +325,7 @@ async function renderCard(plugin: PluginInfo) {
 
   const onSettingChanged = (_key: string) => {
     saveValues(plugin.id, values);
+    scheduleApply(plugin.id, values);
   };
 
   for (const item of plugin.panel ?? []) {

@@ -1,4 +1,4 @@
-﻿#![cfg_attr(windows, windows_subsystem = "windows")]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 //! Android plugin: speaks `docs/plugin-api.md` over stdio and drives scrcpy.
 //!
 //! Responsibilities are deliberately narrow:
@@ -31,6 +31,8 @@ struct Running {
     child: Arc<Mutex<Child>>,
     /// Tells the window-pinning thread to stop.
     stop: Arc<AtomicBool>,
+    /// Engine process id, used for live window-level settings.
+    pid: u32,
 }
 
 fn stdout() -> &'static Mutex<std::io::Stdout> {
@@ -101,7 +103,8 @@ fn landscape_rect() -> Option<(i32, i32, u32, u32)> {
         let height = (work_h as f64 * 0.90) as i32;
         let width = (height as f64 * 16.0 / 9.0) as i32;
         Some((
-            (screen_w - width) / 2,
+            // Right-aligned, away from the centred console.
+            (screen_w - width - 40).max(0),
             (screen_h - height) / 2,
             width as u32,
             height as u32,
@@ -266,6 +269,7 @@ fn launch(cfg: &Config) -> Result<String, String> {
         id: sid.clone(),
         child: Arc::clone(&child),
         stop: Arc::clone(&stop),
+        pid,
     });
 
     spawn_waiter(sid.clone(), child);
@@ -293,16 +297,42 @@ fn launch(cfg: &Config) -> Result<String, String> {
 
 /// Switch capture orientation and restart the engine: scrcpy cannot rotate a
 /// running session when the app on the phone is locked to one orientation.
-fn toggle_orientation() {
+/// Apply settings to a running session: window-level flags live, anything
+/// that changes the capture parameters needs a session restart.
+fn apply_settings(id: Value, params: Value) {
+    let new_settings: scrcpy::Settings = params
+        .get("settings")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
     let Some(mut cfg) = config().lock().unwrap().clone() else {
+        reply(id, json!({"ok": true, "applied": "no-session"}));
         return;
     };
-    cfg.settings.orientation = if cfg.settings.orientation == "landscape" {
-        "portrait".to_string()
-    } else {
-        "landscape".to_string()
-    };
 
+    // Only the always-on-top flag changed?
+    let mut probe = new_settings.clone();
+    probe.always_on_top = cfg.settings.always_on_top;
+    if probe == cfg.settings {
+        cfg.settings.always_on_top = new_settings.always_on_top;
+        let pid = session().lock().unwrap().as_ref().map(|r| r.pid);
+        #[cfg(windows)]
+        if let Some(pid) = pid {
+            window::set_topmost(pid, new_settings.always_on_top);
+        }
+        let _ = pid;
+        *config().lock().unwrap() = Some(cfg);
+        reply(id, json!({"ok": true, "applied": "live"}));
+        return;
+    }
+
+    cfg.settings = new_settings;
+    restart_with(cfg);
+    reply(id, json!({"ok": true, "applied": "restart"}));
+}
+
+/// Stop the current engine and start a new one with the given config.
+fn restart_with(cfg: Config) {
     if let Some(running) = session().lock().unwrap().take() {
         running.stop.store(true, Ordering::Relaxed);
         if let Ok(mut child) = running.child.lock() {
@@ -321,9 +351,21 @@ fn toggle_orientation() {
         }
         Err(err) => emit(
             "log",
-            json!({"level": "error", "message": format!("orientation switch failed: {err}")}),
+            json!({"level": "error", "message": format!("restart failed: {err}")}),
         ),
     }
+}
+
+fn toggle_orientation() {
+    let Some(mut cfg) = config().lock().unwrap().clone() else {
+        return;
+    };
+    cfg.settings.orientation = if cfg.settings.orientation == "landscape" {
+        "portrait".to_string()
+    } else {
+        "landscape".to_string()
+    };
+    restart_with(cfg);
 }
 
 /// Watch the engine process and report its death exactly once.
@@ -487,7 +529,8 @@ fn main() {
                 discover();
                 reply(id, json!({"ok": true}));
             }
-            "discover.stop" | "settings.apply" => reply(id, json!({"ok": true})),
+            "discover.stop" => reply(id, json!({"ok": true})),
+            "settings.apply" => apply_settings(id, params),
             "session.start" => start_session(id, params),
             "session.stop" => stop_session(id),
             "diagnose" | "action.diagnose" => diagnose(id),

@@ -1,4 +1,4 @@
-//! A small "rotate" button drawn on top of the cast window.
+﻿//! A small "rotate" button drawn on top of the cast window.
 //!
 //! Clicking it asks the plugin to switch the capture orientation. scrcpy has
 //! no runtime rotation for a locked app, so the plugin restarts the session -
@@ -19,9 +19,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowRect, LoadCursorW, MoveWindow, PostQuitMessage, RegisterClassW, SetTimer,
+    GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW, SetTimer,
     SetWindowPos, ShowWindow, TranslateMessage, HWND_TOPMOST, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_HAND,
-    MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_SHOWNOACTIVATE, WM_DESTROY, WM_LBUTTONUP,
+    MSG, SWP_NOACTIVATE, SW_SHOWNOACTIVATE, WM_DESTROY, WM_LBUTTONUP,
     WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
     WS_VISIBLE,
 };
@@ -60,7 +60,7 @@ unsafe extern "system" fn wndproc(
             DeleteObject(brush as HGDIOBJ);
 
             let font = CreateFontW(
-                24,
+                20,
                 0,
                 0,
                 0,
@@ -73,7 +73,7 @@ unsafe extern "system" fn wndproc(
                 0,
                 CLEARTYPE_QUALITY as u32,
                 DEFAULT_PITCH as u32,
-                wide("Segoe UI Symbol").as_ptr(),
+                wide("Segoe MDL2 Assets").as_ptr(),
             );
             let old_font = SelectObject(hdc, font as HGDIOBJ);
             SetBkMode(hdc, TRANSPARENT as i32);
@@ -81,7 +81,7 @@ unsafe extern "system" fn wndproc(
 
             let mut rect: RECT = std::mem::zeroed();
             GetClientRect(hwnd, &mut rect);
-            let glyph = wide("\u{27F3}");
+            let glyph = wide("\u{E7AD}");
             DrawTextW(
                 hdc,
                 glyph.as_ptr(),
@@ -132,16 +132,8 @@ fn follow_target(hwnd: HWND) {
         // Below the title bar, so it does not cover minimise/maximise/close.
         let x = rect.right - BUTTON_SIZE - 8;
         let y = rect.top + 44;
-        MoveWindow(hwnd, x, y, BUTTON_SIZE, BUTTON_SIZE, 1);
-        SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
+        SetWindowPos(hwnd, HWND_TOPMOST, x, y, BUTTON_SIZE, BUTTON_SIZE, SWP_NOACTIVATE);
+        
     }
 }
 
@@ -197,7 +189,7 @@ pub fn attach(pid: u32) {
         }
         OVERLAY_HWND.store(hwnd as isize, Ordering::Relaxed);
         ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        SetTimer(hwnd, 1, 200, None);
+        SetTimer(hwnd, 1, 30, None);
         follow_target(hwnd);
 
         let mut msg: MSG = std::mem::zeroed();
