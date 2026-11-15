@@ -11,12 +11,14 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindow,
-    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE, HWND_TOPMOST,
-    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-    SW_SHOWNOACTIVATE, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
+    EnumWindows, GetCursorPos, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
+    IsWindow, IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE,
+    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SW_SHOWNOACTIVATE, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
+    WS_THICKFRAME,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -80,6 +82,62 @@ pub fn find_window(pid: u32) -> Option<HWND> {
         None
     } else {
         Some(search.found)
+    }
+}
+
+/// Height of the invisible strip at the top that behaves like a title bar.
+const DRAG_BAND: i32 = 12;
+
+/// A frameless window cannot be dragged, and `SetWindowLongPtrW(GWLP_WNDPROC)`
+/// does not work across processes, so the plugin implements the drag itself:
+/// watch the left button over the top strip and move the window with it.
+fn drag_loop(hwnd_raw: isize, stop: Arc<AtomicBool>) {
+    let hwnd = hwnd_raw as HWND;
+    let mut dragging = false;
+    let mut grab = (0i32, 0i32);
+
+    loop {
+        if stop.load(Ordering::Relaxed) || unsafe { IsWindow(hwnd) } == 0 {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(16));
+
+        unsafe {
+            let down = (GetAsyncKeyState(VK_LBUTTON as i32) as i16) < 0;
+            if !dragging {
+                if !down {
+                    continue;
+                }
+                let mut cursor = POINT { x: 0, y: 0 };
+                let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+                if GetCursorPos(&mut cursor) == 0 || GetWindowRect(hwnd, &mut rect) == 0 {
+                    continue;
+                }
+                let in_strip = cursor.x >= rect.left
+                    && cursor.x < rect.right
+                    && cursor.y >= rect.top
+                    && cursor.y < rect.top + DRAG_BAND;
+                if in_strip {
+                    grab = (cursor.x - rect.left, cursor.y - rect.top);
+                    dragging = true;
+                }
+            } else if down {
+                let mut cursor = POINT { x: 0, y: 0 };
+                if GetCursorPos(&mut cursor) != 0 {
+                    SetWindowPos(
+                        hwnd,
+                        HWND_TOPMOST,
+                        cursor.x - grab.0,
+                        cursor.y - grab.1,
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
+            } else {
+                dragging = false;
+            }
+        }
     }
 }
 
@@ -166,6 +224,12 @@ pub fn enforce(pid: u32, spec: Spec, stop: Arc<AtomicBool>) {
     let Some(mut hwnd) = hwnd else { return };
     strip_frame(hwnd);
 
+    if !spec.lock_position {
+        let stop = Arc::clone(&stop);
+        let raw = hwnd as isize;
+        std::thread::spawn(move || drag_loop(raw, stop));
+    }
+
     // Position is ours; size belongs to the engine (it locks the aspect ratio
     // to the video, and forcing our own size would stretch the picture).
     if let Some((_, _, width, height)) = rect_of(hwnd) {
@@ -180,6 +244,11 @@ pub fn enforce(pid: u32, spec: Spec, stop: Arc<AtomicBool>) {
                 Some(found) => {
                     hwnd = found;
                     strip_frame(hwnd);
+                    if !spec.lock_position {
+                        let stop = Arc::clone(&stop);
+                        let raw = hwnd as isize;
+                        std::thread::spawn(move || drag_loop(raw, stop));
+                    }
                 }
                 None => return,
             }

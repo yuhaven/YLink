@@ -34,11 +34,21 @@ docs/plugin-api.md    # 插件契约（先读这个）
 | 行为 | 说明 | 可配置 |
 |---|---|---|
 | 无标题栏 | 去掉 `WS_CAPTION`/边框/系统菜单，只剩画面 | — |
+| 拖动 | 按住**画面顶部 12px** 即可拖动（窗口是跨进程的，无法用系统标题栏） | 关闭「固定窗口位置」时可用 |
 | 置顶 | 始终在最前；主窗口最大化也不会盖住它 | — |
-| 画面方向 | 竖屏 / 横屏 / 跟随手机 | 面板「画面方向」 |
-| 位置固定 | 默认**关闭**，窗口可以拖动；打开后被拖动会弹回 | 面板「固定窗口位置」 |
+| 画面方向 | 竖屏 / 横屏 / 跟随手机，切换后需重新点一次「投屏」 | 面板「画面方向」 |
+| 位置固定 | 默认**关闭**；打开后拖动会被弹回 | 面板「固定窗口位置」 |
 | 误关闭恢复 | 被最小化或隐藏后 0.4 秒内自动恢复显示 | — |
 | 尺寸 | 由引擎按视频宽高比决定，不会被拉伸 | — |
+
+验收用端到端脚本（真实点击 + 模拟拖动）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation landscape
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation portrait
+```
+
+复盘见 [docs/postmortem-cast-window.md](docs/postmortem-cast-window.md)。
 
 ## 运行行为
 

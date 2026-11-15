@@ -192,6 +192,13 @@ fn connect(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, String> {
+    log_line(&format!(
+        "connect({id}, {device_id}): settings={}",
+        settings
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "{}".into())
+    ));
     let monitor = app
         .primary_monitor()
         .map_err(|e| e.to_string())?
