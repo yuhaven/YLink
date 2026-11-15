@@ -33,7 +33,7 @@ docs/plugin-api.md    # 插件契约（先读这个）
 - 关闭窗口 = 隐藏到托盘，进程继续在后台；真正退出走托盘菜单「退出」
 - 左键点托盘图标恢复窗口
 - 重复启动不会开第二个窗口，只会把已有窗口叫到前台
-- `CastPane.exe --diagnose`：**无窗口自检**，逐个插件跑诊断并打印结果，退出码 0 表示全部通过
+- `CastPane-cli.exe --diagnose`：**无窗口自检**，终端里直接跑，输出可重定向到文件，退出码 0 表示全部通过
 
 `--diagnose` 示例：
 
@@ -127,11 +127,18 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 ```
 CastPane/
-  CastPane.exe
+  CastPane.exe          # GUI（无控制台）
+  CastPane-cli.exe      # 控制台版，用于 --diagnose
   plugins/android/{plugin.json, bin/}
   plugins/airplay/{plugin.json, bin/}
   LICENSE
   README.md
+```
+
+`CastPane.exe` 是 GUI 子系统程序，从 cmd 重定向输出不可靠；导出诊断报告请用控制台版：
+
+```powershell
+.\CastPane-cli.exe --diagnose > report.txt
 ```
 
 ## 设计文档

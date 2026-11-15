@@ -9,6 +9,11 @@ description = "CastPane desktop shell"
 name = "castpane_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Console binary: reliable stdout/stderr for --diagnose in terminals.
+[[bin]]
+name = "castpane-cli"
+path = "src/bin/cli.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -43,6 +43,11 @@ try {
     if (-not (Test-Path $app)) { throw "app binary not found: $app" }
     Copy-Item $app (Join-Path $dist 'CastPane.exe')
 
+    $cli = Join-Path $RepoRoot 'target/release/castpane-cli.exe'
+    if (Test-Path $cli) {
+        Copy-Item $cli (Join-Path $dist 'CastPane-cli.exe')
+    }
+
     # Plugins: manifest + plugin binary + whatever engines are vendored.
     foreach ($id in @('android', 'airplay')) {
         $src = Join-Path $RepoRoot "plugins/$id"
