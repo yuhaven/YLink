@@ -27,6 +27,13 @@ plugins/airplay/      # plugin.json + 引擎包装
 docs/plugin-api.md    # 插件契约（先读这个）
 ```
 
+## 运行行为
+
+- 正常启动显示主窗口；`CastPane.exe --silent` 启动时不显示窗口，只留托盘图标
+- 关闭窗口 = 隐藏到托盘，进程继续在后台；真正退出走托盘菜单「退出」
+- 左键点托盘图标恢复窗口
+- 重复启动不会开第二个窗口，只会把已有窗口叫到前台
+
 ## 开发
 
 需要 Rust（MSVC 工具链）、Node 20+、VS Build Tools（C++ 桌面开发）。

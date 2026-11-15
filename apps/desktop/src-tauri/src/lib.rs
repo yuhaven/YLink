@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
+use tauri::Manager;
 
 /// What the UI needs to render one plugin card. Everything here comes from
 /// `plugin.json`; the shell has no per-protocol knowledge.
@@ -237,6 +238,51 @@ fn poll_events(id: String, state: tauri::State<'_, AppState>) -> Vec<PluginMessa
         .collect()
 }
 
+/// Bring the main window back from the tray.
+fn show_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+/// Tray icon with two entries: show the window, or really quit.
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+
+    let mut builder = TrayIconBuilder::with_id("main")
+        .tooltip("CastPane")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 pub fn run() {
     let plugins = load_plugins();
     eprintln!(
@@ -246,6 +292,10 @@ pub fn run() {
     );
 
     tauri::Builder::default()
+        // Must be registered first: a second launch should focus this window.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_window(app);
+        }))
         .manage(AppState {
             plugins: Mutex::new(plugins),
         })
@@ -257,6 +307,23 @@ pub fn run() {
             action,
             poll_events
         ])
+        .setup(|app| {
+            build_tray(app)?;
+            // `--silent` starts in the tray without showing a window: used by
+            // background starts, autostart, and automated smoke checks.
+            let silent = std::env::args().any(|arg| arg == "--silent" || arg == "--hidden");
+            if !silent {
+                show_window(app.handle());
+            }
+            Ok(())
+        })
+        // Closing the window hides it; quitting goes through the tray.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running CastPane");
 }
