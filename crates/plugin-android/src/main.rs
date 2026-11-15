@@ -327,7 +327,7 @@ fn main() {
             "discover.stop" | "settings.apply" => reply(id, json!({"ok": true})),
             "session.start" => start_session(id, params),
             "session.stop" => stop_session(id),
-            "diagnose" => diagnose(id),
+            "diagnose" | "action.diagnose" => diagnose(id),
             "shutdown" => {
                 kill_session();
                 reply(id, json!({"ok": true}));

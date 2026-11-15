@@ -18,6 +18,8 @@ pub struct PluginInfo {
     pub schema: Value,
     pub panel: Vec<PanelItem>,
     pub running: bool,
+    /// False when `bin/<plugin>.exe` has not been built yet.
+    pub available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +94,7 @@ fn list_plugins(state: tauri::State<'_, AppState>) -> Vec<PluginInfo> {
                 schema: m.settings.clone(),
                 panel: m.panel.clone(),
                 running: host.is_running(),
+                available: m.entry_path().exists(),
             }
         })
         .collect()
@@ -197,6 +200,27 @@ fn connect(
     .map_err(|e| e.to_string())
 }
 
+/// Invoke a declarative panel action (`action.<name>`) on a plugin.
+#[tauri::command]
+fn action(
+    id: String,
+    name: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, String> {
+    let mut plugins = state.plugins.lock().unwrap();
+    let host = plugins
+        .iter_mut()
+        .find(|p| p.manifest().id == id)
+        .ok_or_else(|| format!("plugin `{id}` not found"))?;
+
+    if !host.is_running() {
+        host.start().map_err(|e| e.to_string())?;
+    }
+
+    host.call(&format!("action.{name}"), json!({}))
+        .map_err(|e| e.to_string())
+}
+
 /// Drain pending plugin notifications (session state, logs, ...).
 #[tauri::command]
 fn poll_events(id: String, state: tauri::State<'_, AppState>) -> Vec<PluginMessage> {
@@ -230,6 +254,7 @@ pub fn run() {
             start_plugin,
             discover,
             connect,
+            action,
             poll_events
         ])
         .run(tauri::generate_context!())

@@ -29,6 +29,7 @@ interface PluginInfo {
   schema: JsonSchema;
   panel: PanelItem[];
   running: boolean;
+  available: boolean;
 }
 
 interface DeviceInfo {
@@ -88,6 +89,7 @@ function renderControl(
   item: PanelItem,
   values: Record<string, unknown>,
   schema: JsonSchema,
+  onAction: (action: string) => void,
 ): HTMLElement | null {
   switch (item.type) {
     case "text":
@@ -138,7 +140,7 @@ function renderControl(
     case "button": {
       const row = h("div", "row");
       const btn = h("button", undefined, item.label ?? item.action ?? "");
-      btn.addEventListener("click", () => setStatus(`触发 ${item.action}（未接线）`));
+      btn.addEventListener("click", () => onAction(item.action ?? ""));
       row.append(btn);
       return row;
     }
@@ -148,37 +150,35 @@ function renderControl(
   }
 }
 
-/** Poll session events for a while so state changes become visible. */
-function watch(pluginId: string, ticks = 12) {
-  let left = ticks;
-  const timer = window.setInterval(async () => {
-    left -= 1;
+/** Poll a plugin forever: session state to the status bar, the rest to the log. */
+function startPolling(pluginId: string, report: (line: string) => void) {
+  window.setInterval(async () => {
     try {
       const messages = await invoke<PluginMessage[]>("poll_events", { id: pluginId });
       for (const msg of messages) {
         if (msg.method === "session.state") {
           setStatus(`会话：${msg.params.state as string}`);
-        }
-        if (msg.method === "log") {
-          console.info("[plugin]", msg.params.message);
+        } else if (msg.method === "log") {
+          report(`· ${msg.params.message as string}`);
+        } else if (msg.method === "device.found") {
+          report(`+ 发现 ${msg.params.name as string}`);
         }
       }
     } catch {
-      /* ignore */
+      /* plugin not running yet */
     }
-    if (left <= 0) window.clearInterval(timer);
-  }, 500);
+  }, 1000);
 }
 
 function renderDevices(
   plugin: PluginInfo,
   container: HTMLElement,
   values: Record<string, unknown>,
-) {
+): () => void {
   const scan = h("button", undefined, "扫描设备");
   const list = h("div", "devices");
 
-  scan.addEventListener("click", async () => {
+  async function run() {
     scan.disabled = true;
     scan.textContent = "扫描中…";
     try {
@@ -205,7 +205,6 @@ function renderDevices(
               settings: values,
             });
             setStatus(`${device.name} 正在投屏`);
-            watch(plugin.id);
           } catch (err) {
             cast.disabled = false;
             setStatus(`投屏失败：${err}`);
@@ -220,9 +219,15 @@ function renderDevices(
       scan.disabled = false;
       scan.textContent = "扫描设备";
     }
-  });
+  }
 
+  scan.addEventListener("click", () => void run());
+  if (!plugin.available) {
+    scan.disabled = true;
+    scan.title = `插件未安装：缺少 ${plugin.id} 的可执行文件`;
+  }
   container.append(scan, list);
+  return () => void run();
 }
 
 function renderCard(plugin: PluginInfo) {
@@ -232,11 +237,42 @@ function renderCard(plugin: PluginInfo) {
     h("span", "card-title", plugin.name),
     h("span", "card-version", `v${plugin.version}`),
   );
+  if (!plugin.available) head.append(h("span", "badge", "未安装"));
+
+  const log = h("div", "log");
+  const report = (line: string) => {
+    log.append(h("div", "log-line", line));
+    log.scrollTop = log.scrollHeight;
+  };
 
   const body = h("div", "card-body");
   const values = loadValues(plugin.id, plugin.schema);
+
+  const onAction = async (name: string) => {
+    if (!name) return;
+    try {
+      const result = await invoke<{
+        checks?: Array<{ name: string; ok: boolean; detail: string; hint?: string }>;
+      }>("action", { id: plugin.id, name });
+      const checks = result?.checks ?? [];
+      if (checks.length === 0) {
+        report(`✓ ${name}`);
+      }
+      for (const check of checks) {
+        report(
+          `${check.ok ? "✓" : "✗"} ${check.name}：${check.detail}` +
+            (check.ok ? "" : ` — ${check.hint ?? "检查失败"}`),
+        );
+      }
+    } catch (err) {
+      report(`✗ ${name} 失败：${err}`);
+    }
+  };
+
   for (const item of plugin.panel ?? []) {
-    const node = renderControl(item, values, plugin.schema);
+    const node = renderControl(item, values, plugin.schema, (action) =>
+      void onAction(action),
+    );
     if (node) body.append(node);
   }
   // Delegated listeners: every control persists without wiring each one.
@@ -244,10 +280,13 @@ function renderCard(plugin: PluginInfo) {
   body.addEventListener("input", () => saveValues(plugin.id, values));
 
   const devices = h("div", "card-devices");
-  renderDevices(plugin, devices, values);
+  const scan = renderDevices(plugin, devices, values);
 
-  card.append(head, h("div", "card-desc", plugin.description), body, devices);
+  card.append(head, h("div", "card-desc", plugin.description), body, devices, log);
   app.append(card);
+
+  startPolling(plugin.id, report);
+  if (plugin.available) window.setTimeout(scan, 400);
 }
 
 async function load() {

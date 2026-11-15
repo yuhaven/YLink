@@ -38,5 +38,13 @@ fn talks_to_the_packaged_android_plugin() {
     }
     assert!(saw_event, "plugin emitted no notification at all");
 
+    // Declarative panel buttons call `action.<name>`; diagnose must answer
+    // with a checks array the UI can render.
+    let diag = host
+        .call("action.diagnose", serde_json::json!({}))
+        .expect("action.diagnose (stale binary? run scripts/package-plugin.ps1 -Plugin android)");
+    let checks = diag["checks"].as_array().expect("checks array");
+    assert!(checks.iter().any(|c| c["name"] == "scrcpy"));
+
     host.stop();
 }
