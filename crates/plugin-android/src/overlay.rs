@@ -17,7 +17,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect,
+    BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject,
+    DrawTextW, Ellipse, EndPaint, FillRect, FillRgn, GetStockObject, NULL_BRUSH,
     Polygon, Rectangle, SelectObject, SetBkMode, SetTextColor, CLEARTYPE_QUALITY, DEFAULT_CHARSET,
     DEFAULT_PITCH, DT_CENTER, DT_SINGLELINE, DT_VCENTER, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
 };
@@ -27,7 +28,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW, SetWindowPos, ShowWindow,
     TranslateMessage, HWND_TOPMOST, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_HAND, MSG, SWP_NOACTIVATE,
     SWP_NOZORDER, SW_SHOWNOACTIVATE, WM_LBUTTONUP, WM_PAINT, WNDCLASSW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    SetLayeredWindowAttributes, LWA_ALPHA,
 };
 
 use crate::window::find_window;
@@ -35,8 +37,9 @@ use crate::window::find_window;
 const ROTATE_CLASS: &str = "CastPaneRotateButton";
 const NAV_CLASS: &str = "CastPaneNavBar";
 const BUTTON: i32 = 40;
-const NAV_CELL: i32 = 40;
+const NAV_CELL: i32 = 48;
 const NAV_WIDTH: i32 = NAV_CELL * 3;
+const NAV_HEIGHT: i32 = 40;
 
 static CLICK_TX: OnceLock<Mutex<Option<Sender<()>>>> = OnceLock::new();
 static TARGET_PID: AtomicU32 = AtomicU32::new(0);
@@ -160,28 +163,35 @@ unsafe extern "system" fn nav_proc(
         WM_PAINT => {
             let mut ps: PAINTSTRUCT = std::mem::zeroed();
             let hdc = BeginPaint(hwnd, &mut ps);
-            let brush = CreateSolidBrush(rgb(28, 31, 38));
-            FillRect(hdc, &ps.rcPaint, brush);
 
-            let white = CreateSolidBrush(rgb(232, 236, 244));
-            let old = SelectObject(hdc, white as HGDIOBJ);
+            // White rounded bar, like the phone's own navigation bar.
+            let white = CreateSolidBrush(rgb(248, 249, 251));
+            let mut rect: RECT = std::mem::zeroed();
+            GetClientRect(hwnd, &mut rect);
+            let rgn = CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, 14, 14);
+            FillRgn(hdc, rgn, white);
+            DeleteObject(rgn as HGDIOBJ);
+            DeleteObject(white as HGDIOBJ);
 
-            // Back: triangle.
+            // Black outline icons, not filled: triangle, circle, square.
+            let pen = CreatePen(0, 3, rgb(20, 22, 26)); // PS_SOLID = 0
+            let old_pen = SelectObject(hdc, pen as HGDIOBJ);
+            let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+
             let mut back = [
-                windows_sys::Win32::Foundation::POINT { x: 26, y: 12 },
-                windows_sys::Win32::Foundation::POINT { x: 26, y: 28 },
-                windows_sys::Win32::Foundation::POINT { x: 14, y: 20 },
+                windows_sys::Win32::Foundation::POINT { x: 32, y: 12 },
+                windows_sys::Win32::Foundation::POINT { x: 32, y: 28 },
+                windows_sys::Win32::Foundation::POINT { x: 18, y: 20 },
             ];
             Polygon(hdc, back.as_mut_ptr(), 3);
 
-            // Home: circle.
-            Ellipse(hdc, NAV_CELL + 11, 11, NAV_CELL + 29, 29);
+            Ellipse(hdc, NAV_CELL + 15, 12, NAV_CELL + 33, 30);
 
-            // Recents: square.
-            Rectangle(hdc, NAV_CELL * 2 + 12, 12, NAV_CELL * 2 + 28, 28);
+            Rectangle(hdc, NAV_CELL * 2 + 16, 13, NAV_CELL * 2 + 32, 29);
 
-            SelectObject(hdc, old);
-            DeleteObject(white as HGDIOBJ);
+            SelectObject(hdc, old_brush);
+            SelectObject(hdc, old_pen);
+            DeleteObject(pen as HGDIOBJ);
             EndPaint(hwnd, &ps);
             0
         }
@@ -225,13 +235,14 @@ fn track() {
             }
             let nav = NAV_HWND.load(Ordering::Relaxed) as HWND;
             if !nav.is_null() {
+                // Bottom-centre of the picture, as a navigation bar.
                 SetWindowPos(
                     nav,
                     HWND_TOPMOST,
-                    rect.right - NAV_WIDTH - 8,
-                    rect.bottom - NAV_CELL - 12,
+                    rect.left + (rect.right - rect.left - NAV_WIDTH) / 2,
+                    rect.bottom - NAV_HEIGHT - 72,
                     NAV_WIDTH,
-                    NAV_CELL,
+                    NAV_HEIGHT,
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 );
             }
@@ -239,7 +250,7 @@ fn track() {
     }
 }
 
-fn create_window(class: &str, proc: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT, width: i32, height: i32) -> HWND {
+fn create_window(class: &str, proc: unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM) -> LRESULT, width: i32, height: i32, layered: bool) -> HWND {
     unsafe {
         let hinstance = GetModuleHandleW(std::ptr::null());
         let class_name = wide(class);
@@ -252,7 +263,7 @@ fn create_window(class: &str, proc: unsafe extern "system" fn(HWND, u32, WPARAM,
         RegisterClassW(&wc);
 
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | if layered { WS_EX_LAYERED } else { 0 },
             class_name.as_ptr(),
             wide(class).as_ptr(),
             WS_POPUP | WS_VISIBLE,
@@ -290,9 +301,13 @@ pub fn attach(pid: u32, device_serial: &str) {
 
     if ROTATE_HWND.load(Ordering::Relaxed) == 0 {
         std::thread::spawn(move || unsafe {
-            let rotate = create_window(ROTATE_CLASS, rotate_proc, BUTTON, BUTTON);
+            let rotate = create_window(ROTATE_CLASS, rotate_proc, BUTTON, BUTTON, true);
+            if !rotate.is_null() {
+                // Half transparent so it does not fight with the picture.
+                SetLayeredWindowAttributes(rotate, 0, 128, LWA_ALPHA);
+            }
             ROTATE_HWND.store(rotate as isize, Ordering::Relaxed);
-            let nav = create_window(NAV_CLASS, nav_proc, NAV_WIDTH, NAV_CELL);
+            let nav = create_window(NAV_CLASS, nav_proc, NAV_WIDTH, NAV_HEIGHT, false);
             NAV_HWND.store(nav as isize, Ordering::Relaxed);
 
             let mut msg: MSG = std::mem::zeroed();
