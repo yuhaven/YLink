@@ -16,6 +16,9 @@ fn default_max_fps() -> u32 {
 fn default_true() -> bool {
     true
 }
+fn default_orientation() -> String {
+    "portrait".to_string()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +35,9 @@ pub struct Settings {
     /// landscape when the phone rotates.
     #[serde(default = "default_true")]
     pub lock_orientation: bool,
+    /// `portrait`, `landscape` or `auto`.
+    #[serde(default = "default_orientation")]
+    pub orientation: String,
 }
 
 impl Default for Settings {
@@ -42,6 +48,7 @@ impl Default for Settings {
             audio: true,
             stay_awake: true,
             lock_orientation: true,
+            orientation: default_orientation(),
         }
     }
 }
@@ -82,11 +89,18 @@ pub fn build_args(
     if settings.stay_awake {
         args.push("--stay-awake".to_string());
     }
-    if settings.lock_orientation {
-        // `@0` locks the capture to the device's natural (portrait)
-        // orientation. A bare `@` would lock to whatever orientation the
-        // device happened to be in when the session started.
-        args.push("--capture-orientation=@0".to_string());
+    match settings.orientation.as_str() {
+        // `@` locks the rotation to the given angle, in the device's natural
+        // orientation. 0 = portrait, 90 = landscape.
+        "portrait" => args.push("--capture-orientation=@0".to_string()),
+        "landscape" => args.push("--capture-orientation=@90".to_string()),
+        _ => {
+            // "auto": let the device decide, but still honour lock_orientation
+            // by pinning to the initial orientation.
+            if settings.lock_orientation {
+                args.push("--capture-orientation=@".to_string());
+            }
+        }
     }
 
     if let Some(w) = window {
@@ -198,6 +212,22 @@ mod tests {
         assert!(settings.audio);
     }
 
+    #[test]
+    fn landscape_rotates_the_capture() {
+        let settings = Settings {
+            orientation: "landscape".to_string(),
+            ..Settings::default()
+        };
+        let joined = build_args("dev", "t", &settings, None).join(" ");
+        assert!(joined.contains("--capture-orientation=@90"), "{joined}");
+    }
+
+    #[test]
+    fn portrait_locks_to_natural_orientation() {
+        let joined = build_args("dev", "t", &Settings::default(), None).join(" ");
+        assert!(joined.contains("--capture-orientation=@0"), "{joined}");
+    }
+
     /// The manifest is the contract the UI renders; the code must agree with
     /// its defaults, otherwise the panel lies about what will happen.
     #[test]
@@ -214,6 +244,7 @@ mod tests {
             "audio": props["audio"]["default"],
             "stayAwake": props["stayAwake"]["default"],
             "lockOrientation": props["lockOrientation"]["default"],
+            "orientation": props["orientation"]["default"],
         });
         let settings: Settings = serde_json::from_value(from_manifest).expect("settings");
 
@@ -223,5 +254,6 @@ mod tests {
         assert_eq!(settings.audio, defaults.audio);
         assert_eq!(settings.stay_awake, defaults.stay_awake);
         assert_eq!(settings.lock_orientation, defaults.lock_orientation);
+        assert_eq!(settings.orientation, defaults.orientation);
     }
 }

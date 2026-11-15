@@ -140,8 +140,21 @@ def scrcpy_pids() -> set[int]:
 
 def main() -> int:
     seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    orientation = sys.argv[2] if len(sys.argv) > 2 else "portrait"
     window = portrait_rect()
-    print(f"screen={screen()} requested={window}")
+    if orientation == "landscape":
+        sw, sh = screen()
+        h = round((sh - 80) * 0.90)
+        w = round(h * 16 / 9)
+        window = {
+            "x": (sw - w) // 2,
+            "y": (sh - h) // 2,
+            "width": w,
+            "height": h,
+            "borderless": True,
+            "alwaysOnTop": True,
+        }
+    print(f"screen={screen()} orientation={orientation} requested={window}")
 
     plugin = Plugin()
     try:
@@ -154,7 +167,13 @@ def main() -> int:
             {
                 "deviceId": SERIAL,
                 "window": window,
-                "settings": {"maxSize": 1080, "maxFps": 60, "audio": True},
+                "settings": {
+                    "maxSize": 1080,
+                    "maxFps": 60,
+                    "audio": True,
+                    "orientation": orientation,
+                    "lockPosition": True,
+                },
             },
         )
         print("session:", result)
@@ -186,6 +205,17 @@ def main() -> int:
                 print(f"after nudge: x={ax} y={ay} w={aw} h={ah} pinned={pinned}")
             else:
                 print("after nudge: window vanished")
+
+            # Minimise it the way a shell would and check the plugin restores it.
+            user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+            time.sleep(1.5)
+            after_min = find_scrcpy_window()
+            if after_min:
+                _, mx, my, mw, mh, *_ = after_min
+                alive = user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd)
+                print(f"after minimize: visible={bool(alive)} x={mx} y={my} w={mw} h={mh}")
+            else:
+                print("after minimize: window gone")
         else:
             print("window: not found")
 

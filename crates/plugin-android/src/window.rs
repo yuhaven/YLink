@@ -13,10 +13,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsWindow,
-    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, HWND_TOPMOST, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
-    WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
+    EnumWindows, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindow,
+    IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE, HWND_TOPMOST,
+    SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
+    SW_SHOWNOACTIVATE, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -190,7 +190,33 @@ pub fn enforce(pid: u32, spec: Spec, stop: Arc<AtomicBool>) {
         // SDL may re-apply its own style shortly after the window appears.
         strip_frame(hwnd);
 
+        // Minimising or hiding it (some shells do this when the console
+        // window is minimised) leaves a black/vanished cast; bring it back.
+        unsafe {
+            if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+                if let Some((_, _, width, height)) = rect_of(hwnd) {
+                    place(hwnd, spec.x, spec.y, width, height, spec.topmost);
+                }
+            }
+        }
+
         if !spec.lock_position {
+            // Still keep it above other windows: maximising the main window
+            // must not bury the cast.
+            if spec.topmost {
+                unsafe {
+                    SetWindowPos(
+                        hwnd,
+                        HWND_TOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                    );
+                }
+            }
             continue;
         }
         if let Some((x, y, width, height)) = rect_of(hwnd) {

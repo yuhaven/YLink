@@ -85,6 +85,28 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
+/// Portrait video becomes a wide window; 90% of the screen height, 16:9.
+#[cfg(windows)]
+fn landscape_rect() -> Option<(i32, i32, u32, u32)> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    unsafe {
+        let screen_w = GetSystemMetrics(SM_CXSCREEN);
+        let screen_h = GetSystemMetrics(SM_CYSCREEN);
+        if screen_w <= 0 || screen_h <= 0 {
+            return None;
+        }
+        let work_h = screen_h - 80;
+        let height = (work_h as f64 * 0.90) as i32;
+        let width = (height as f64 * 16.0 / 9.0) as i32;
+        Some((
+            (screen_w - width) / 2,
+            (screen_h - height) / 2,
+            width as u32,
+            height as u32,
+        ))
+    }
+}
+
 fn discover() {
     let (_, adb) = engine_paths();
     if !adb.exists() {
@@ -166,9 +188,24 @@ fn start_session(id: Value, params: Value) {
         .get("settings")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    let window: Option<scrcpy::WindowSpec> = params
+    let mut window: Option<scrcpy::WindowSpec> = params
         .get("window")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    // A landscape session needs a landscape window; the host only computes a
+    // portrait rectangle, so recompute it here.
+    if settings.orientation == "landscape" {
+        if let Some((x, y, width, height)) = landscape_rect() {
+            window = Some(scrcpy::WindowSpec {
+                x,
+                y,
+                width,
+                height,
+                borderless: true,
+                always_on_top: true,
+            });
+        }
+    }
 
     let title = format!("CastPane · {device_id}");
     let args = scrcpy::build_args(device_id, &title, &settings, window.as_ref());
@@ -202,13 +239,19 @@ fn start_session(id: Value, params: Value) {
                     .get("settings")
                     .and_then(|settings| settings.get("lockPosition"))
                     .and_then(Value::as_bool)
-                    .unwrap_or(true);
-                if let Some(spec) = params
-                    .get("window")
-                    .and_then(|window| window::spec_from_json(window, lock_position))
-                {
-                    let stop = Arc::clone(&stop);
-                    std::thread::spawn(move || window::enforce(pid, spec, stop));
+                    .unwrap_or(false);
+                if let Some(w) = window.as_ref() {
+                    let spec_json = json!({
+                        "x": w.x,
+                        "y": w.y,
+                        "width": w.width,
+                        "height": w.height,
+                        "alwaysOnTop": w.always_on_top,
+                    });
+                    if let Some(spec) = window::spec_from_json(&spec_json, lock_position) {
+                        let stop = Arc::clone(&stop);
+                        std::thread::spawn(move || window::enforce(pid, spec, stop));
+                    }
                 }
             }
         }

@@ -39,9 +39,15 @@
         "default": true,
         "title": "锁定竖屏"
       },
+      "orientation": {
+        "type": "string",
+        "enum": ["portrait", "landscape", "auto"],
+        "default": "portrait",
+        "title": "画面方向"
+      },
       "lockPosition": {
         "type": "boolean",
-        "default": true,
+        "default": false,
         "title": "固定窗口位置"
       }
     }
@@ -49,6 +55,7 @@
   "panel": [
     { "type": "text", "text": "用数据线连接手机，打开「USB 调试」后自动出现在设备列表。" },
     { "type": "switch", "key": "lockOrientation", "label": "锁定竖屏（手机转动画面不跟着转）" },
+    { "type": "select", "key": "orientation", "label": "画面方向" },
     { "type": "switch", "key": "lockPosition", "label": "固定窗口位置（拖不动）" },
     { "type": "switch", "key": "audio", "label": "转发音频（Android 11+）" },
     { "type": "switch", "key": "stayAwake", "label": "投屏时保持亮屏" },
