@@ -101,8 +101,24 @@ core                          plugin
 | `window.report` | `{sessionId, handle, width, height}` | `handle` 为原生窗口句柄（Windows 为 HWND 十进制） |
 | `log` | `{level, message}` | 写入日志面板 |
 
-## 8. 错误约定
+### 7.1 无扫描类协议的约定
 
+AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`discover.start` 上报**本机接收端**作为一个伪设备：
+
+```json
+{"id": "receiver", "name": "AirPlay 接收端", "kind": "ios", "detail": "ready"}
+```
+
+`detail` 的取值宿主需要理解：
+
+| detail | 含义 | 宿主行为 |
+|---|---|---|
+| `device` | adb 设备在线 | 允许投屏 |
+| `ready` | 接收端可开会话 | 允许投屏 |
+| `unauthorized` / `offline` | 设备侧不可用 | 禁用投屏 |
+| `engine-missing` | 引擎缺失 | 禁用投屏并提示安装 |
+
+## 8. 错误约定
 ```json
 {
   "code": "E_FIREWALL",

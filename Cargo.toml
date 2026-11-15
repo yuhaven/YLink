@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/plugin-android",
+    "crates/plugin-airplay",
     "apps/desktop/src-tauri",
 ]
 

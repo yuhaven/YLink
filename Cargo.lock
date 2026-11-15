@@ -303,6 +303,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "castpane-plugin-airplay"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "castpane-plugin-android"
 version = "0.1.0"
 dependencies = [

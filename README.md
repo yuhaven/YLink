@@ -13,7 +13,7 @@
 | 链路 | 引擎 | 状态 | 平台 |
 |---|---|---|---|
 | 安卓 USB / 无线 | [scrcpy](https://github.com/Genymobile/scrcpy) v5.0.1 | 已实现，待引擎到位联调 | Win / mac / Linux |
-| AirPlay（iPhone / iPad） | [uxplay-windows](https://github.com/leapbtw/uxplay-windows) | 只有 manifest，待实现 | Windows |
+| AirPlay（iPhone / iPad） | [uxplay-windows](https://github.com/leapbtw/uxplay-windows) | 已实现（接收端启动/停止；窗口接管待做） | Windows |
 | Miracast | — | 暂不做 | — |
 | DLNA | — | 暂不做 | — |
 

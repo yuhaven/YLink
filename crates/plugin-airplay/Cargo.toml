@@ -1,0 +1,18 @@
+[package]
+name = "castpane-plugin-airplay"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "CastPane AirPlay plugin: launches the uxplay receiver"
+
+[[bin]]
+name = "airplay-plugin"
+path = "src/main.rs"
+
+# Test double for the receiver engine; built alongside the plugin.
+[[bin]]
+name = "mock-engine"
+path = "src/bin/mock_engine.rs"
+
+[dependencies]
+serde_json = "1"

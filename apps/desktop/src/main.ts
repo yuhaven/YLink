@@ -195,7 +195,10 @@ function renderDevices(
           h("div", "device-meta", `${device.id} · ${device.detail}`),
         );
         const cast = h("button", "primary", "投屏");
-        cast.disabled = device.detail !== "device";
+        // "ready" is airplay's receiver; "device" is an adb device.
+        const blocked = ["unauthorized", "offline", "engine-missing"].includes(device.detail);
+        cast.disabled = blocked;
+        if (device.detail === "engine-missing") cast.title = "缺少接收端引擎";
         cast.addEventListener("click", async () => {
           cast.disabled = true;
           try {
