@@ -26,8 +26,8 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW, SetWindowPos, ShowWindow,
-    TranslateMessage, HWND_TOPMOST, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_HAND, MSG, SWP_NOACTIVATE,
-    SWP_NOZORDER, SW_SHOWNOACTIVATE, WM_LBUTTONUP, WM_PAINT, WNDCLASSW,
+    IsIconic, IsWindowVisible, TranslateMessage, HWND_TOPMOST, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, IDC_HAND, MSG, SWP_NOACTIVATE,
+    SW_HIDE, SWP_NOZORDER, SW_SHOWNOACTIVATE, WM_LBUTTONUP, WM_PAINT, WNDCLASSW,
     WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
     SetLayeredWindowAttributes, LWA_ALPHA,
 };
@@ -47,6 +47,7 @@ static ROTATE_HWND: AtomicIsize = AtomicIsize::new(0);
 static NAV_HWND: AtomicIsize = AtomicIsize::new(0);
 static SERIAL: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static TRACKER_STARTED: AtomicBool = AtomicBool::new(false);
+static OVERLAYS_VISIBLE: AtomicBool = AtomicBool::new(true);
 
 fn rgb(r: u8, g: u8, b: u8) -> u32 {
     r as u32 | ((g as u32) << 8) | ((b as u32) << 16)
@@ -252,6 +253,25 @@ unsafe extern "system" fn nav_proc(
     }
 }
 
+/// Show or hide both control windows, remembering the state.
+fn show_overlays(visible: bool) {
+    if visible == OVERLAYS_VISIBLE.load(Ordering::Relaxed) {
+        return;
+    }
+    OVERLAYS_VISIBLE.store(visible, Ordering::Relaxed);
+    let command = if visible { SW_SHOWNOACTIVATE } else { SW_HIDE };
+    unsafe {
+        let rotate = ROTATE_HWND.load(Ordering::Relaxed) as HWND;
+        if !rotate.is_null() {
+            ShowWindow(rotate, command);
+        }
+        let nav = NAV_HWND.load(Ordering::Relaxed) as HWND;
+        if !nav.is_null() {
+            ShowWindow(nav, command);
+        }
+    }
+}
+
 /// Keep both bars pinned to the cast window. 8ms keeps up with dragging.
 fn track() {
     loop {
@@ -260,12 +280,26 @@ fn track() {
         if pid == 0 {
             continue;
         }
-        let Some(target) = find_window(pid) else { continue };
+        let Some(target) = find_window(pid) else {
+            // The cast window is gone (closed): do not leave the controls
+            // floating on the desktop.
+            show_overlays(false);
+            continue;
+        };
         unsafe {
             let mut rect: RECT = std::mem::zeroed();
             if GetWindowRect(target, &mut rect) == 0 {
                 continue;
             }
+            // Hide the controls together with the cast window: they are
+            // separate topmost windows and would otherwise float on the
+            // desktop after a minimise.
+            let target_visible = IsIconic(target) == 0 && IsWindowVisible(target) != 0;
+            show_overlays(target_visible);
+            if !target_visible {
+                continue;
+            }
+
             let rotate = ROTATE_HWND.load(Ordering::Relaxed) as HWND;
             if !rotate.is_null() {
                 SetWindowPos(

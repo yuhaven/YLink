@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SWP_NOZORDER,
+    GetSystemMetrics, IsIconic, SM_CXSCREEN, SM_CYSCREEN, SWP_NOZORDER,
     EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
     HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
 };
@@ -63,7 +63,10 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         right: 0,
         bottom: 0,
     };
-    if GetWindowRect(hwnd, &mut rect) != 0 && (rect.right - rect.left) > 160 {
+    // A minimised window collapses to a tiny rect; keep it so the overlay
+    // controls can hide together with it.
+    let iconic = IsIconic(hwnd) != 0;
+    if GetWindowRect(hwnd, &mut rect) != 0 && (iconic || (rect.right - rect.left) > 160) {
         search.found = hwnd;
         return 0;
     }
