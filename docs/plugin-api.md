@@ -143,6 +143,15 @@ AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`disc
 
 `window.report` 之后插件**不应**再自行改变窗口尺寸；需要全屏等行为时通过 `settings.apply` 由核心下发。
 
+### 实现现状（v0.1）
+
+| 插件 | 做法 |
+|---|---|
+| android | scrcpy 原生支持 `--window-x/y/width/height --window-borderless --always-on-top`，**不需要接管** |
+| airplay | uxplay 无窗口参数，插件按子进程 PID 枚举顶层窗口后 `SetWindowLongPtrW` 去边框 + `SetWindowPos` 摆位（`crates/plugin-airplay/src/window.rs`） |
+
+接管是 best effort：8 秒内找不到窗口就放弃，接收端照常运行，只在日志里留一条 warn。
+
 ## 10. 安全模型
 
 插件是本地可执行文件，**安装即信任**。核心不联网校验签名、不做沙箱。理由是个人工具场景下沙箱收益极低、成本极高。

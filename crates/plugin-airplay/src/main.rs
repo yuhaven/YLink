@@ -9,6 +9,7 @@
 //! the app itself. See docs/plugin-api.md §9 for the window takeover design.
 
 mod engine;
+mod window;
 
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -90,6 +91,7 @@ fn start_session(id: Value, params: Value) {
     match engine::spawn(&engine_path) {
         Ok(child) => {
             let sid = format!("airplay-{}", now_millis());
+            let pid = child.id();
             let child = Arc::new(Mutex::new(child));
 
             *session().lock().unwrap() = Some(Running {
@@ -121,6 +123,26 @@ fn start_session(id: Value, params: Value) {
             );
 
             spawn_waiter(sid, child);
+
+            // Window takeover is best effort and runs off the RPC thread.
+            #[cfg(windows)]
+            {
+                let spec = params
+                    .get("window")
+                    .and_then(window::spec_from_json);
+                if let Some(spec) = spec {
+                    std::thread::spawn(move || match window::adopt_when_ready(pid, spec, 8000) {
+                        Ok(()) => emit(
+                            "log",
+                            json!({"level": "info", "message": "已接管接收端窗口"}),
+                        ),
+                        Err(err) => emit(
+                            "log",
+                            json!({"level": "warn", "message": format!("窗口接管失败：{err}，接收端仍在运行")}),
+                        ),
+                    });
+                }
+            }
         }
         Err(err) => reply_error(
             id,
