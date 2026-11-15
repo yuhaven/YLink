@@ -303,6 +303,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "castpane-plugin-android"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cc"
 version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

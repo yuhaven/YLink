@@ -12,8 +12,8 @@
 
 | 链路 | 引擎 | 状态 | 平台 |
 |---|---|---|---|
-| 安卓 USB / 无线 | [scrcpy](https://github.com/Genymobile/scrcpy) | 计划中 | Win / mac / Linux |
-| AirPlay（iPhone / iPad） | [uxplay-windows](https://github.com/leapbtw/uxplay-windows) | 计划中 | Windows |
+| 安卓 USB / 无线 | [scrcpy](https://github.com/Genymobile/scrcpy) v5.0.1 | 已实现，待引擎到位联调 | Win / mac / Linux |
+| AirPlay（iPhone / iPad） | [uxplay-windows](https://github.com/leapbtw/uxplay-windows) | 只有 manifest，待实现 | Windows |
 | Miracast | — | 暂不做 | — |
 | DLNA | — | 暂不做 | — |
 
@@ -55,6 +55,16 @@ powershell -ExecutionPolicy Bypass -File scripts\fetch-engines.ps1 -Only android
 
 - scrcpy → `plugins/android/bin/scrcpy/`（需要 `scrcpy.exe`、`adb.exe`、`scrcpy-server`）
 - uxplay-windows → `plugins/airplay/bin/uxplay/`
+
+## 打包插件
+
+插件是可执行文件，需要构建后放到 `plugins/<id>/bin/`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-plugin.ps1 -Plugin android -Release
+```
+
+宿主启动时会读取 `plugins/*/plugin.json`，按 manifest 渲染界面；插件进程通过 stdio 上的 JSON-RPC 通信。协议见 [docs/plugin-api.md](docs/plugin-api.md)。
 
 ## 设计文档
 
