@@ -121,6 +121,15 @@ pub fn list_devices(adb: &Path) -> Result<Vec<Device>, String> {
     Ok(parse_devices(&text))
 }
 
+/// Android API level of a device, used to explain audio-forwarding support.
+pub fn sdk_level(adb: &Path, serial: &str) -> Option<u32> {
+    let output = Command::new(adb)
+        .args(["-s", serial, "shell", "getprop", "ro.build.version.sdk"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

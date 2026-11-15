@@ -248,12 +248,9 @@ fn launch(cfg: &Config) -> Result<String, String> {
                 width,
                 height,
                 borderless: true,
-                always_on_top: settings.always_on_top,
+                always_on_top: false,
             });
         }
-    }
-    if let Some(w) = window.as_mut() {
-        w.always_on_top = settings.always_on_top;
     }
 
     let title = format!("CastPane - {}", cfg.device_id);
@@ -276,14 +273,14 @@ fn launch(cfg: &Config) -> Result<String, String> {
 
     #[cfg(windows)]
     {
-        overlay::attach(pid);
+        overlay::attach(pid, &cfg.device_id);
         if let Some(w) = window.as_ref() {
             let spec_json = json!({
                 "x": w.x,
                 "y": w.y,
                 "width": w.width,
                 "height": w.height,
-                "alwaysOnTop": w.always_on_top,
+                "alwaysOnTop": false,
             });
             if let Some(spec) = window::spec_from_json(&spec_json, settings.lock_position) {
                 let stop = Arc::clone(&stop);
@@ -310,19 +307,8 @@ fn apply_settings(id: Value, params: Value) {
         return;
     };
 
-    // Only the always-on-top flag changed?
-    let mut probe = new_settings.clone();
-    probe.always_on_top = cfg.settings.always_on_top;
-    if probe == cfg.settings {
-        cfg.settings.always_on_top = new_settings.always_on_top;
-        let pid = session().lock().unwrap().as_ref().map(|r| r.pid);
-        #[cfg(windows)]
-        if let Some(pid) = pid {
-            window::set_topmost(pid, new_settings.always_on_top);
-        }
-        let _ = pid;
-        *config().lock().unwrap() = Some(cfg);
-        reply(id, json!({"ok": true, "applied": "live"}));
+    if cfg.settings == new_settings {
+        reply(id, json!({"ok": true, "applied": "noop"}));
         return;
     }
 
@@ -457,18 +443,35 @@ fn diagnose(id: Value) {
     }));
 
     if adb.exists() {
-        match adb::list_devices(&adb) {
-            Ok(devices) => checks.push(json!({
-                "name": "devices",
-                "ok": true,
-                "detail": format!("{} 台设备", devices.len())
-            })),
-            Err(err) => checks.push(json!({
-                "name": "devices",
-                "ok": false,
-                "detail": err,
-                "hint": "确认 adb 可执行且未被杀软拦截"
-            })),
+        let devices = adb::list_devices(&adb).unwrap_or_default();
+        checks.push(json!({
+            "name": "devices",
+            "ok": !devices.is_empty(),
+            "detail": format!("{} 台设备", devices.len()),
+            "hint": if devices.is_empty() { json!("插好数据线并允许 USB 调试") } else { Value::Null }
+        }));
+
+        // Audio forwarding needs Android 13 (API 33) in scrcpy. Saying so beats
+        // letting the user wonder why the phone still plays the sound.
+        if let Some(device) = devices.first() {
+            match adb::sdk_level(&adb, &device.serial) {
+                Some(sdk) => checks.push(json!({
+                    "name": "audio",
+                    "ok": sdk >= 33,
+                    "detail": format!("Android API {sdk}"),
+                    "hint": if sdk >= 33 {
+                        Value::Null
+                    } else {
+                        json!("音频转发需要 Android 13(API 33) 及以上，当前系统只能在本机播放")
+                    }
+                })),
+                None => checks.push(json!({
+                    "name": "audio",
+                    "ok": false,
+                    "detail": "无法读取系统版本",
+                    "hint": "adb shell getprop 被拒绝"
+                })),
+            }
         }
     }
 

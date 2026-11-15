@@ -1,4 +1,4 @@
-//! Window geometry for the host shell.
+﻿//! Window geometry for the host shell.
 //!
 //! The core never renders video; it only decides where a plugin's window
 //! should sit. Placement itself happens in the desktop layer (Win32
@@ -107,7 +107,7 @@ impl WindowSpec {
 
     /// Default short-drama window: portrait, always on top, no chrome.
     pub fn portrait(work: Rect) -> Self {
-        Self::fit(work, Aspect::Portrait, true, true)
+        Self::fit(work, Aspect::Portrait, false, false)
     }
 }
 
@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(spec.rect.height, 936); // 90% of 1040
         assert_eq!(spec.rect.width, 527); // 936 * 9/16, rounded
         assert!(spec.rect.width < work.width);
-        assert!(spec.always_on_top && spec.borderless);
+        assert!(!spec.always_on_top && !spec.borderless);
     }
 
     #[test]

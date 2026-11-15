@@ -4,9 +4,18 @@
   "version": "0.1.0",
   "api": 0,
   "description": "镜像安卓手机画面，内置 scrcpy，USB 或无线",
-  "platforms": ["windows", "macos", "linux"],
+  "platforms": [
+    "windows",
+    "macos",
+    "linux"
+  ],
   "entry": "bin/android-plugin.exe",
-  "capabilities": ["discover", "session", "window", "diagnose"],
+  "capabilities": [
+    "discover",
+    "session",
+    "window",
+    "diagnose"
+  ],
   "settings": {
     "type": "object",
     "properties": {
@@ -41,7 +50,11 @@
       },
       "orientation": {
         "type": "string",
-        "enum": ["portrait", "landscape", "auto"],
+        "enum": [
+          "portrait",
+          "landscape",
+          "auto"
+        ],
         "default": "portrait",
         "title": "画面方向"
       },
@@ -49,24 +62,57 @@
         "type": "boolean",
         "default": false,
         "title": "固定窗口位置"
-      },
-      "alwaysOnTop": {
-        "type": "boolean",
-        "default": false,
-        "title": "总在最前"
       }
     }
   },
   "panel": [
-    { "type": "text", "text": "用数据线连接手机，打开「USB 调试」后自动出现在设备列表。" },
-    { "type": "switch", "key": "lockOrientation", "label": "锁定竖屏（手机转动画面不跟着转）" },
-    { "type": "switch", "key": "lockPosition", "label": "固定窗口位置（拖不动）" },
-    { "type": "switch", "key": "alwaysOnTop", "label": "总在最前（会盖住控制台）" },
-    { "type": "switch", "key": "audio", "label": "转发音频（Android 11+）" },
-    { "type": "switch", "key": "stayAwake", "label": "投屏时保持亮屏" },
-    { "type": "slider", "key": "maxSize", "label": "最大分辨率", "min": 480, "max": 2160, "step": 1 },
-    { "type": "slider", "key": "maxFps", "label": "帧率上限", "min": 15, "max": 120, "step": 1 },
-    { "type": "divider" },
-    { "type": "button", "action": "rescan", "label": "重新扫描设备" }
+    {
+      "type": "text",
+      "text": "用数据线连接手机，打开「USB 调试」后自动出现在设备列表。"
+    },
+    {
+      "type": "switch",
+      "key": "lockOrientation",
+      "label": "锁定竖屏（手机转动画面不跟着转）"
+    },
+    {
+      "type": "switch",
+      "key": "lockPosition",
+      "label": "固定窗口位置（拖不动）"
+    },
+    {
+      "type": "switch",
+      "key": "audio",
+      "label": "??????? Android 13+?"
+    },
+    {
+      "type": "switch",
+      "key": "stayAwake",
+      "label": "投屏时保持亮屏"
+    },
+    {
+      "type": "slider",
+      "key": "maxSize",
+      "label": "最大分辨率",
+      "min": 480,
+      "max": 2160,
+      "step": 1
+    },
+    {
+      "type": "slider",
+      "key": "maxFps",
+      "label": "帧率上限",
+      "min": 15,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "button",
+      "action": "rescan",
+      "label": "重新扫描设备"
+    }
   ]
 }
