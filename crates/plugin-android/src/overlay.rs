@@ -39,7 +39,7 @@ const NAV_CLASS: &str = "CastPaneNavBar";
 const BUTTON: i32 = 40;
 const NAV_CELL: i32 = 48;
 const NAV_WIDTH: i32 = NAV_CELL * 3;
-const NAV_HEIGHT: i32 = 40;
+const NAV_HEIGHT: i32 = 44;
 
 static CLICK_TX: OnceLock<Mutex<Option<Sender<()>>>> = OnceLock::new();
 static TARGET_PID: AtomicU32 = AtomicU32::new(0);
@@ -163,31 +163,57 @@ unsafe extern "system" fn nav_proc(
         WM_PAINT => {
             let mut ps: PAINTSTRUCT = std::mem::zeroed();
             let hdc = BeginPaint(hwnd, &mut ps);
-
-            // White rounded bar, like the phone's own navigation bar.
-            let white = CreateSolidBrush(rgb(248, 249, 251));
             let mut rect: RECT = std::mem::zeroed();
             GetClientRect(hwnd, &mut rect);
-            let rgn = CreateRoundRectRgn(0, 0, rect.right + 1, rect.bottom + 1, 14, 14);
-            FillRgn(hdc, rgn, white);
-            DeleteObject(rgn as HGDIOBJ);
+
+            // A toolbar outside the picture: plain white, flush under the
+            // window, with a hairline separator on top.
+            let white = CreateSolidBrush(rgb(250, 250, 252));
+            FillRect(hdc, &rect, white);
             DeleteObject(white as HGDIOBJ);
 
-            // Black outline icons, not filled: triangle, circle, square.
-            let pen = CreatePen(0, 3, rgb(20, 22, 26)); // PS_SOLID = 0
+            let line = CreateSolidBrush(rgb(212, 215, 222));
+            let mut edge = RECT {
+                left: 0,
+                top: 0,
+                right: rect.right,
+                bottom: 1,
+            };
+            FillRect(hdc, &edge, line);
+            DeleteObject(line as HGDIOBJ);
+            edge.top = 0;
+
+            // Three black outline icons, centred as a group.
+            let pen = CreatePen(0, 2, rgb(24, 26, 30)); // PS_SOLID = 0
             let old_pen = SelectObject(hdc, pen as HGDIOBJ);
             let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
+            let center = rect.right / 2;
+            let mid = rect.bottom / 2;
+            let gap = 56;
+
+            // Back: triangle.
             let mut back = [
-                windows_sys::Win32::Foundation::POINT { x: 32, y: 12 },
-                windows_sys::Win32::Foundation::POINT { x: 32, y: 28 },
-                windows_sys::Win32::Foundation::POINT { x: 18, y: 20 },
+                windows_sys::Win32::Foundation::POINT {
+                    x: center - gap + 6,
+                    y: mid - 9,
+                },
+                windows_sys::Win32::Foundation::POINT {
+                    x: center - gap + 6,
+                    y: mid + 9,
+                },
+                windows_sys::Win32::Foundation::POINT {
+                    x: center - gap - 8,
+                    y: mid,
+                },
             ];
             Polygon(hdc, back.as_mut_ptr(), 3);
 
-            Ellipse(hdc, NAV_CELL + 15, 12, NAV_CELL + 33, 30);
+            // Home: circle.
+            Ellipse(hdc, center - 10, mid - 10, center + 10, mid + 10);
 
-            Rectangle(hdc, NAV_CELL * 2 + 16, 13, NAV_CELL * 2 + 32, 29);
+            // Recents: square.
+            Rectangle(hdc, center + gap - 10, mid - 9, center + gap + 10, mid + 9);
 
             SelectObject(hdc, old_brush);
             SelectObject(hdc, old_pen);
@@ -197,9 +223,28 @@ unsafe extern "system" fn nav_proc(
         }
         WM_LBUTTONUP => {
             let x = (lparam & 0xffff) as i16 as i32;
-            let cell = (x / NAV_CELL).clamp(0, 2);
+            let mut rect: RECT = std::mem::zeroed();
+            unsafe {
+                GetClientRect(hwnd, &mut rect);
+            }
+            let center = rect.right / 2;
+            let gap = 56;
+            // Nearest icon within a comfortable hit area.
+            let offsets = [-gap, 0, gap];
+            let mut cell = 1usize;
+            let mut best = i32::MAX;
+            for (index, offset) in offsets.iter().enumerate() {
+                let distance = (x - (center + offset)).abs();
+                if distance < best {
+                    best = distance;
+                    cell = index;
+                }
+            }
+            if best > 44 {
+                return 0;
+            }
             // KEYCODE_BACK = 4, KEYCODE_HOME = 3, KEYCODE_APP_SWITCH = 187
-            let code = [4u32, 3, 187][cell as usize];
+            let code = [4u32, 3, 187][cell];
             std::thread::spawn(move || send_key(code));
             0
         }
@@ -235,13 +280,14 @@ fn track() {
             }
             let nav = NAV_HWND.load(Ordering::Relaxed) as HWND;
             if !nav.is_null() {
-                // Bottom-centre of the picture, as a navigation bar.
+                // Outside the picture: a full-width toolbar flush under the\r
+                // window, so it never covers the mirrored screen.
                 SetWindowPos(
                     nav,
                     HWND_TOPMOST,
-                    rect.left + (rect.right - rect.left - NAV_WIDTH) / 2,
-                    rect.bottom - NAV_HEIGHT - 72,
-                    NAV_WIDTH,
+                    rect.left,
+                    rect.bottom,
+                    rect.right - rect.left,
                     NAV_HEIGHT,
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 );
@@ -307,7 +353,7 @@ pub fn attach(pid: u32, device_serial: &str) {
                 SetLayeredWindowAttributes(rotate, 0, 128, LWA_ALPHA);
             }
             ROTATE_HWND.store(rotate as isize, Ordering::Relaxed);
-            let nav = create_window(NAV_CLASS, nav_proc, NAV_WIDTH, NAV_HEIGHT, false);
+            let nav = create_window(NAV_CLASS, nav_proc, 320, NAV_HEIGHT, false);
             NAV_HWND.store(nav as isize, Ordering::Relaxed);
 
             let mut msg: MSG = std::mem::zeroed();
