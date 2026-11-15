@@ -33,11 +33,23 @@
         "type": "boolean",
         "default": true,
         "title": "投屏时保持亮屏"
+      },
+      "lockOrientation": {
+        "type": "boolean",
+        "default": true,
+        "title": "锁定竖屏"
+      },
+      "lockPosition": {
+        "type": "boolean",
+        "default": true,
+        "title": "固定窗口位置"
       }
     }
   },
   "panel": [
     { "type": "text", "text": "用数据线连接手机，打开「USB 调试」后自动出现在设备列表。" },
+    { "type": "switch", "key": "lockOrientation", "label": "锁定竖屏（手机转动画面不跟着转）" },
+    { "type": "switch", "key": "lockPosition", "label": "固定窗口位置（拖不动）" },
     { "type": "switch", "key": "audio", "label": "转发音频（Android 11+）" },
     { "type": "switch", "key": "stayAwake", "label": "投屏时保持亮屏" },
     { "type": "slider", "key": "maxSize", "label": "最大分辨率", "min": 480, "max": 2160, "step": 1 },

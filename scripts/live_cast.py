@@ -87,8 +87,8 @@ class Plugin:
             self.proc.kill()
 
 
-def find_scrcpy_window() -> tuple[int, int, int, int, int, int] | None:
-    """Return (x, y, w, h, style, exstyle) of a visible scrcpy window."""
+def find_scrcpy_window():
+    """Return (hwnd, x, y, w, h, style, exstyle) of a visible scrcpy window."""
     pids = scrcpy_pids()
     if not pids:
         return None
@@ -106,6 +106,7 @@ def find_scrcpy_window() -> tuple[int, int, int, int, int, int] | None:
                 exstyle = user32.GetWindowLongW(hwnd, -20)
                 found.append(
                     (
+                        hwnd,
                         rect.left,
                         rect.top,
                         rect.right - rect.left,
@@ -167,13 +168,24 @@ def main() -> int:
                 break
 
         if geometry:
-            x, y, w, h, style, exstyle = geometry
+            hwnd, x, y, w, h, style, exstyle = geometry
             topmost = bool(exstyle & 0x00000008)
             caption = bool(style & 0x00C00000)
             print(
                 f"window: x={x} y={y} w={w} h={h} ratio={w / h:.3f} "
                 f"topmost={topmost} caption={caption}"
             )
+
+            # Try to drag it away; the plugin is supposed to pin it back.
+            user32.SetWindowPos(hwnd, 0, 10, 10, w, h, 0x0004 | 0x0010)
+            time.sleep(1.2)
+            after = find_scrcpy_window()
+            if after:
+                _, ax, ay, aw, ah, *_ = after
+                pinned = abs(ax - x) <= 2 and abs(ay - y) <= 2
+                print(f"after nudge: x={ax} y={ay} w={aw} h={ah} pinned={pinned}")
+            else:
+                print("after nudge: window vanished")
         else:
             print("window: not found")
 

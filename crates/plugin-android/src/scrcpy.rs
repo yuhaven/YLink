@@ -28,6 +28,10 @@ pub struct Settings {
     pub audio: bool,
     #[serde(default = "default_true")]
     pub stay_awake: bool,
+    /// Keep the capture orientation fixed so the picture cannot flip to
+    /// landscape when the phone rotates.
+    #[serde(default = "default_true")]
+    pub lock_orientation: bool,
 }
 
 impl Default for Settings {
@@ -37,6 +41,7 @@ impl Default for Settings {
             max_fps: default_max_fps(),
             audio: true,
             stay_awake: true,
+            lock_orientation: true,
         }
     }
 }
@@ -76,6 +81,12 @@ pub fn build_args(
     }
     if settings.stay_awake {
         args.push("--stay-awake".to_string());
+    }
+    if settings.lock_orientation {
+        // `@0` locks the capture to the device's natural (portrait)
+        // orientation. A bare `@` would lock to whatever orientation the
+        // device happened to be in when the session started.
+        args.push("--capture-orientation=@0".to_string());
     }
 
     if let Some(w) = window {
@@ -202,6 +213,7 @@ mod tests {
             "maxFps": props["maxFps"]["default"],
             "audio": props["audio"]["default"],
             "stayAwake": props["stayAwake"]["default"],
+            "lockOrientation": props["lockOrientation"]["default"],
         });
         let settings: Settings = serde_json::from_value(from_manifest).expect("settings");
 
@@ -210,5 +222,6 @@ mod tests {
         assert_eq!(settings.max_fps, defaults.max_fps);
         assert_eq!(settings.audio, defaults.audio);
         assert_eq!(settings.stay_awake, defaults.stay_awake);
+        assert_eq!(settings.lock_orientation, defaults.lock_orientation);
     }
 }

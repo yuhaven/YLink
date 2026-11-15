@@ -9,13 +9,15 @@
 
 mod adb;
 mod scrcpy;
+mod window;
 
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const NAME: &str = "Android";
 
@@ -25,6 +27,8 @@ static SESSION: OnceLock<Mutex<Option<Running>>> = OnceLock::new();
 struct Running {
     id: String,
     child: Arc<Mutex<Child>>,
+    /// Tells the window-pinning thread to stop.
+    stop: Arc<AtomicBool>,
 }
 
 fn stdout() -> &'static Mutex<std::io::Stdout> {
@@ -172,11 +176,14 @@ fn start_session(id: Value, params: Value) {
     match scrcpy::spawn(&scrcpy, &args) {
         Ok(child) => {
             let sid = format!("{device_id}-{}", now_millis());
+            let pid = child.id();
             let child = Arc::new(Mutex::new(child));
+            let stop = Arc::new(AtomicBool::new(false));
 
             *session().lock().unwrap() = Some(Running {
                 id: sid.clone(),
                 child: Arc::clone(&child),
+                stop: Arc::clone(&stop),
             });
 
             reply(id, json!({"sessionId": sid}));
@@ -184,12 +191,26 @@ fn start_session(id: Value, params: Value) {
                 "session.state",
                 json!({"sessionId": sid, "state": "connecting"}),
             );
-            emit(
-                "session.state",
-                json!({"sessionId": sid, "state": "streaming"}),
-            );
 
             spawn_waiter(sid, child);
+
+            // Frameless, pinned, topmost: scrcpy's own flag left the caption
+            // in place, so the plugin owns the window from here on.
+            #[cfg(windows)]
+            {
+                let lock_position = params
+                    .get("settings")
+                    .and_then(|settings| settings.get("lockPosition"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                if let Some(spec) = params
+                    .get("window")
+                    .and_then(|window| window::spec_from_json(window, lock_position))
+                {
+                    let stop = Arc::clone(&stop);
+                    std::thread::spawn(move || window::enforce(pid, spec, stop));
+                }
+            }
         }
         Err(err) => reply_error(
             id,
@@ -201,40 +222,56 @@ fn start_session(id: Value, params: Value) {
 }
 
 /// Watch the engine process and report its death exactly once.
+///
+/// The engine may reject an argument and exit within a second, so "streaming"
+/// is only announced after a short grace period with the process still alive.
 fn spawn_waiter(session_id: String, child: Arc<Mutex<Child>>) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(300));
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        let mut announced = false;
 
-        let exited = {
-            let mut guard = match child.lock() {
-                Ok(guard) => guard,
-                Err(_) => return,
+        loop {
+            std::thread::sleep(Duration::from_millis(300));
+
+            let exited = {
+                let mut guard = match child.lock() {
+                    Ok(guard) => guard,
+                    Err(_) => return,
+                };
+                match guard.try_wait() {
+                    Ok(status) => status,
+                    Err(_) => return,
+                }
             };
-            match guard.try_wait() {
-                Ok(status) => status,
-                Err(_) => return,
-            }
-        };
 
-        if let Some(status) = exited {
-            let error = if status.success() {
-                Value::Null
-            } else {
-                json!({"code": "E_ENGINE_EXIT", "message": status.to_string()})
-            };
-            emit(
-                "session.state",
-                json!({"sessionId": session_id, "state": "stopped", "error": error}),
-            );
-            let mut slot = session().lock().unwrap();
-            if slot.as_ref().map(|r| r.id == session_id).unwrap_or(false) {
-                *slot = None;
+            if let Some(status) = exited {
+                let error = if status.success() {
+                    Value::Null
+                } else {
+                    json!({"code": "E_ENGINE_EXIT", "message": status.to_string()})
+                };
+                emit(
+                    "session.state",
+                    json!({"sessionId": session_id, "state": "stopped", "error": error}),
+                );
+                let mut slot = session().lock().unwrap();
+                if slot.as_ref().map(|r| r.id == session_id).unwrap_or(false) {
+                    *slot = None;
+                }
+                return;
             }
-            return;
-        }
 
-        if session().lock().map(|s| s.is_none()).unwrap_or(true) {
-            return;
+            if !announced && started.elapsed() >= Duration::from_millis(900) {
+                announced = true;
+                emit(
+                    "session.state",
+                    json!({"sessionId": session_id, "state": "streaming"}),
+                );
+            }
+
+            if session().lock().map(|s| s.is_none()).unwrap_or(true) {
+                return;
+            }
         }
     });
 }
@@ -242,6 +279,7 @@ fn spawn_waiter(session_id: String, child: Arc<Mutex<Child>>) {
 fn stop_session(id: Value) {
     let running = session().lock().unwrap().take();
     if let Some(running) = running {
+        running.stop.store(true, Ordering::Relaxed);
         if let Ok(mut child) = running.child.lock() {
             let _ = child.kill();
             let _ = child.wait();
@@ -292,6 +330,7 @@ fn diagnose(id: Value) {
 
 fn kill_session() {
     if let Some(running) = session().lock().unwrap().take() {
+        running.stop.store(true, Ordering::Relaxed);
         if let Ok(mut child) = running.child.lock() {
             let _ = child.kill();
             let _ = child.wait();
