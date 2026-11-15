@@ -27,8 +27,20 @@ $ErrorActionPreference = 'Stop'
 Push-Location $RepoRoot
 try {
     if (-not $SkipBuild) {
-        & cargo build --release -p castpane -p castpane-plugin-android
-        if ($LASTEXITCODE -ne 0) { throw "cargo build failed with $LASTEXITCODE" }
+        # The Tauri CLI embeds the frontend into the executable. A plain
+        # `cargo build --release` skips that and the app then tries to load
+        # http://localhost:1420, which only exists during development.
+        Push-Location (Join-Path $RepoRoot 'apps/desktop')
+        try {
+            & npm.cmd run tauri -- build --no-bundle
+            if ($LASTEXITCODE -ne 0) { throw "tauri build failed with $LASTEXITCODE" }
+        }
+        finally {
+            Pop-Location
+        }
+
+        & cargo build --release -p castpane-plugin-android
+        if ($LASTEXITCODE -ne 0) { throw "plugin build failed with $LASTEXITCODE" }
     }
 
     $confPath = Join-Path $RepoRoot 'apps/desktop/src-tauri/tauri.conf.json'

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "CastPane desktop shell"
+# Two binaries: the GUI (`castpane`) and the console companion. Tauri must
+# know which one is the app.
+default-run = "castpane"
 
 [lib]
 name = "castpane_lib"
