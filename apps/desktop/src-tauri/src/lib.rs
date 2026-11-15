@@ -83,7 +83,7 @@ fn load_plugins() -> Vec<PluginHost> {
 
 #[tauri::command]
 fn list_plugins(state: tauri::State<'_, AppState>) -> Vec<PluginInfo> {
-    let plugins = state.plugins.lock().unwrap();
+    let plugins = lock_plugins(&state);
     plugins
         .iter()
         .map(|host| {
@@ -105,7 +105,7 @@ fn list_plugins(state: tauri::State<'_, AppState>) -> Vec<PluginInfo> {
 
 #[tauri::command]
 fn start_plugin(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut plugins = state.plugins.lock().unwrap();
+    let mut plugins = lock_plugins(&state);
     let host = plugins
         .iter_mut()
         .find(|p| p.manifest().id == id)
@@ -113,11 +113,36 @@ fn start_plugin(id: String, state: tauri::State<'_, AppState>) -> Result<(), Str
     host.start().map_err(|e| e.to_string())
 }
 
+/// Minimal file log: the UI can only show one status line, and a stuck
+/// command otherwise leaves no trace at all.
+fn log_line(message: &str) {
+    use std::io::Write;
+    let path = std::env::temp_dir().join("castpane.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+/// Lock the plugin list even if a previous command panicked while holding it.
+fn lock_plugins<'a>(
+    state: &'a tauri::State<'_, AppState>,
+) -> std::sync::MutexGuard<'a, Vec<PluginHost>> {
+    state
+        .plugins
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Launch the plugin if needed, ask it to scan, and collect `device.found`.
 #[tauri::command]
 fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceInfo>, String> {
+    log_line(&format!("discover({id}): begin"));
     {
-        let mut plugins = state.plugins.lock().unwrap();
+        let mut plugins = lock_plugins(&state);
         let host = plugins
             .iter_mut()
             .find(|p| p.manifest().id == id)
@@ -133,9 +158,10 @@ fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceI
             .map_err(|e| e.to_string())?;
     } // release the lock: discovery is asynchronous and other plugins matter
 
+    log_line(&format!("discover({id}): plugins released, waiting"));
     std::thread::sleep(Duration::from_millis(500));
 
-    let mut plugins = state.plugins.lock().unwrap();
+    let mut plugins = lock_plugins(&state);
     let host = plugins
         .iter_mut()
         .find(|p| p.manifest().id == id)
@@ -153,6 +179,7 @@ fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceI
             }
         }
     }
+    log_line(&format!("discover({id}): {} device(s)", devices.len()));
     Ok(devices)
 }
 
@@ -189,7 +216,7 @@ fn connect(
         "alwaysOnTop": spec.always_on_top,
     });
 
-    let mut plugins = state.plugins.lock().unwrap();
+    let mut plugins = lock_plugins(&state);
     let host = plugins
         .iter_mut()
         .find(|p| p.manifest().id == id)
@@ -217,7 +244,7 @@ fn action(
     name: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, String> {
-    let mut plugins = state.plugins.lock().unwrap();
+    let mut plugins = lock_plugins(&state);
     let host = plugins
         .iter_mut()
         .find(|p| p.manifest().id == id)
@@ -229,6 +256,12 @@ fn action(
 
     host.call(&format!("action.{name}"), json!({}))
         .map_err(|e| e.to_string())
+}
+
+/// Shown in the footer so it is obvious which build is running.
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
 
 /// Settings for one plugin, or `null` when nothing was saved yet.
@@ -245,7 +278,7 @@ fn save_settings(id: String, values: Value) -> Result<(), String> {
 /// Drain pending plugin notifications (session state, logs, ...).
 #[tauri::command]
 fn poll_events(id: String, state: tauri::State<'_, AppState>) -> Vec<PluginMessage> {
-    let mut plugins = state.plugins.lock().unwrap();
+    let mut plugins = lock_plugins(&state);
     let Some(host) = plugins.iter_mut().find(|p| p.manifest().id == id) else {
         return Vec::new();
     };
@@ -430,7 +463,8 @@ pub fn run() {
             action,
             poll_events,
             load_settings,
-            save_settings
+            save_settings,
+            app_version
         ])
         .setup(|app| {
             build_tray(app)?;

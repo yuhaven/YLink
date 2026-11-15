@@ -319,7 +319,13 @@ async function load() {
       return;
     }
     for (const plugin of plugins) await renderCard(plugin);
-    setStatus(`${plugins.length} 个插件`);
+    let version = "";
+    try {
+      version = await invoke<string>("app_version");
+    } catch {
+      /* preview mode */
+    }
+    setStatus(`${version ? `v${version} · ` : ""}${plugins.length} 个插件`);
   } catch (err) {
     // Running in a plain browser (vite) without the Tauri backend.
     app.replaceChildren();
