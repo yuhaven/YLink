@@ -57,13 +57,21 @@ fn emit(method: &str, params: Value) {
     send(json!({"jsonrpc": "2.0", "method": method, "params": params}));
 }
 
-/// `<plugin dir>/bin/scrcpy/{scrcpy.exe,adb.exe}`
+/// `<plugin dir>/bin/scrcpy/{scrcpy.exe,adb.exe}`, overridable for tests.
 fn engine_paths() -> (PathBuf, PathBuf) {
     let dir = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|d| d.join("scrcpy")))
         .unwrap_or_else(|| PathBuf::from("scrcpy"));
-    (dir.join("scrcpy.exe"), dir.join("adb.exe"))
+
+    let scrcpy = std::env::var_os("CASTPANE_SCRCPY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dir.join("scrcpy.exe"));
+    let adb = std::env::var_os("CASTPANE_ADB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dir.join("adb.exe"));
+
+    (scrcpy, adb)
 }
 
 fn now_millis() -> u128 {

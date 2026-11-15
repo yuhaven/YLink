@@ -58,7 +58,26 @@ CastPane diagnose — 2 plugin(s) from ...\plugins
 # 核心单测（9 个，含一次真实进程的 JSON-RPC 往返）
 cargo test -p castpane-core
 
-# 桌面应用
+# 全部测试（28 个，含用模拟引擎跑通的投屏会话）
+cargo test --workspace
+
+# 无窗口自检
+target\debug\castpane.exe --diagnose
+```
+
+插件支持用环境变量覆盖引擎路径，方便没有设备时联调：
+
+| 变量 | 作用 |
+|---|---|
+| `CASTPANE_ADB` | 替换 adb 可执行文件 |
+| `CASTPANE_SCRCPY` | 替换 scrcpy 可执行文件 |
+| `CASTPANE_AIRPLAY_ENGINE` | 替换 uxplay 可执行文件 |
+
+测试就是靠这三个变量把模拟引擎塞给插件的。
+
+桌面应用：
+
+```powershell
 cd apps/desktop
 npm install
 npm run tauri dev

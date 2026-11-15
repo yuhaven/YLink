@@ -9,6 +9,15 @@ description = "CastPane android plugin: ADB discovery + scrcpy launch"
 name = "android-plugin"
 path = "src/main.rs"
 
+# Test doubles for adb and scrcpy; built alongside the plugin.
+[[bin]]
+name = "mock-adb"
+path = "src/bin/mock_adb.rs"
+
+[[bin]]
+name = "mock-scrcpy"
+path = "src/bin/mock_scrcpy.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
