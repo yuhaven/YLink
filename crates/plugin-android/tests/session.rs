@@ -161,7 +161,10 @@ fn casts_to_a_mock_device_with_portrait_geometry() {
         !args.contains("--window-borderless"),
         "cast window must keep its native title bar: {args}"
     );
-    assert!(args.contains("--always-on-top"), "missing topmost: {args}");
+    assert!(
+        !args.contains("--always-on-top"),
+        "cast must not cover the console by default: {args}"
+    );
 
     let stopped = client.request(4, "session.stop", json!({}));
     assert_eq!(stopped["result"]["ok"], true);

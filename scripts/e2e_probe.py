@@ -120,6 +120,18 @@ def controls():
     return out
 
 
+def close_window():
+    """Ask the cast window to close, like the user pressing X."""
+    win = find_window()
+    if not win:
+        return {"ok": False, "closed": False}
+    hwnd = win[0]
+    WM_CLOSE = 0x0010
+    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+    time.sleep(1.5)
+    return {"ok": True, "closed": find_window() is None}
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "measure"
     if cmd == "drag":
@@ -129,5 +141,7 @@ if __name__ == "__main__":
                           "moved": bool(before and after and before["x"] != after["x"])}))
     elif cmd == "controls":
         print(json.dumps(controls()))
+    elif cmd == "close":
+        print(json.dumps(close_window()))
     else:
         print(json.dumps(measure()))

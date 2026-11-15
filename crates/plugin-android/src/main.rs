@@ -202,9 +202,13 @@ fn start_session(id: Value, params: Value) {
                 width,
                 height,
                 borderless: true,
-                always_on_top: true,
+                always_on_top: settings.always_on_top,
             });
         }
+    }
+    // The host always asks for topmost; the user's setting wins.
+    if let Some(w) = window.as_mut() {
+        w.always_on_top = settings.always_on_top;
     }
 
     let title = format!("CastPane · {device_id}");

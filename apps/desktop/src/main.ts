@@ -46,6 +46,11 @@ interface PluginMessage {
 const app = document.querySelector<HTMLElement>("#plugins")!;
 const statusEl = document.querySelector<HTMLElement>("#status")!;
 
+/** The session currently streaming, if any. */
+let active: { pluginId: string; deviceId: string } | null = null;
+/** Cast buttons, re-enabled whenever a session stops. */
+const castButtons = new Set<HTMLButtonElement>();
+
 function setStatus(text: string) {
   statusEl.textContent = text;
 }
@@ -97,6 +102,7 @@ function renderControl(
   values: Record<string, unknown>,
   schema: JsonSchema,
   onAction: (action: string) => void,
+  onChange: (key: string) => void,
 ): HTMLElement | null {
   switch (item.type) {
     case "text":
@@ -110,6 +116,7 @@ function renderControl(
       input.checked = Boolean(values[item.key!] ?? false);
       input.addEventListener("change", () => {
         values[item.key!] = input.checked;
+        onChange(item.key!);
       });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), input);
       return row;
@@ -140,6 +147,7 @@ function renderControl(
       }
       select.addEventListener("change", () => {
         values[item.key!] = select.value;
+        onChange(item.key!);
       });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), select);
       return row;
@@ -157,6 +165,23 @@ function renderControl(
   }
 }
 
+/** Restart the running session so a settings change applies immediately. */
+async function restartCast(pluginId: string, values: Record<string, unknown>) {
+  if (!active) return;
+  const { deviceId } = active;
+  setStatus("正在切换画面方向…");
+  try {
+    await invoke("stop_cast", { id: pluginId });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await invoke("connect", { id: pluginId, deviceId, settings: values });
+    setStatus("画面方向已切换");
+  } catch (err) {
+    setStatus(`切换失败：${err}`);
+    active = null;
+    for (const button of castButtons) button.disabled = false;
+  }
+}
+
 /** Poll a plugin forever: session state to the status bar, the rest to the log. */
 function startPolling(pluginId: string, report: (line: string) => void) {
   window.setInterval(async () => {
@@ -164,7 +189,14 @@ function startPolling(pluginId: string, report: (line: string) => void) {
       const messages = await invoke<PluginMessage[]>("poll_events", { id: pluginId });
       for (const msg of messages) {
         if (msg.method === "session.state") {
-          setStatus(`会话：${msg.params.state as string}`);
+          const state = msg.params.state as string;
+          setStatus(`会话：${state}`);
+          if (state === "stopped" || state === "error") {
+            // The cast window was closed (or the engine died): the device is
+            // free again, so let the user cast without restarting the app.
+            active = null;
+            for (const button of castButtons) button.disabled = false;
+          }
         } else if (msg.method === "log") {
           report(`· ${msg.params.message as string}`);
         } else if (msg.method === "device.found") {
@@ -202,6 +234,7 @@ function renderDevices(
           h("div", "device-meta", `${device.id} · ${device.detail}`),
         );
         const cast = h("button", "primary", "投屏");
+        castButtons.add(cast);
         // "ready" is airplay's receiver; "device" is an adb device.
         const blocked = ["unauthorized", "offline", "engine-missing"].includes(device.detail);
         cast.disabled = blocked;
@@ -214,6 +247,7 @@ function renderDevices(
               deviceId: device.id,
               settings: values,
             });
+            active = { pluginId: plugin.id, deviceId: device.id };
             setStatus(`${device.name} 正在投屏`);
           } catch (err) {
             cast.disabled = false;
@@ -279,9 +313,20 @@ async function renderCard(plugin: PluginInfo) {
     }
   };
 
+  const onSettingChanged = (key: string) => {
+    saveValues(plugin.id, values);
+    if (key === "orientation" && active && active.pluginId === plugin.id) {
+      void restartCast(plugin.id, values);
+    }
+  };
+
   for (const item of plugin.panel ?? []) {
-    const node = renderControl(item, values, plugin.schema, (action) =>
-      void onAction(action),
+    const node = renderControl(
+      item,
+      values,
+      plugin.schema,
+      (action) => void onAction(action),
+      onSettingChanged,
     );
     if (node) body.append(node);
   }

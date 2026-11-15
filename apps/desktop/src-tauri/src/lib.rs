@@ -263,6 +263,22 @@ async fn connect(
     .await
 }
 
+/// Stop the current session (used by the UI before restarting with new
+/// settings, and when the user closes the cast window).
+#[tauri::command]
+async fn stop_cast(id: String, app: tauri::AppHandle) -> Result<Value, String> {
+    blocking(app, move |state| {
+        let mut plugins = lock_plugins(state);
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
+        host.call("session.stop", json!({}))
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
 /// Invoke a declarative panel action (`action.<name>`) on a plugin.
 #[tauri::command]
 async fn action(id: String, name: String, app: tauri::AppHandle) -> Result<Value, String> {
@@ -485,6 +501,7 @@ pub fn run() {
             start_plugin,
             discover,
             connect,
+            stop_cast,
             action,
             poll_events,
             load_settings,

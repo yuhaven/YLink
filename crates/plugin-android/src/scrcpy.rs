@@ -38,6 +38,11 @@ pub struct Settings {
     /// `portrait`, `landscape` or `auto`.
     #[serde(default = "default_orientation")]
     pub orientation: String,
+    /// Keep the cast above other windows. Off by default: an always-on-top
+    /// window covers the console, so the user cannot change settings while
+    /// casting.
+    #[serde(default)]
+    pub always_on_top: bool,
 }
 
 impl Default for Settings {
@@ -49,6 +54,7 @@ impl Default for Settings {
             stay_awake: true,
             lock_orientation: true,
             orientation: default_orientation(),
+            always_on_top: false,
         }
     }
 }
@@ -110,7 +116,7 @@ pub fn build_args(
         args.push(format!("--window-height={}", w.height));
         // Native frame on purpose: title bar, minimise, maximise and close.
         // `--window-borderless` is deliberately not passed.
-        if w.always_on_top {
+        if settings.always_on_top {
             args.push("--always-on-top".to_string());
         }
     }
@@ -146,7 +152,11 @@ mod tests {
 
     #[test]
     fn builds_portrait_window_arguments() {
-        let args = build_args("R58M", "Pixel 5", &Settings::default(), Some(&portrait()));
+        let settings = Settings {
+            always_on_top: true,
+            ..Settings::default()
+        };
+        let args = build_args("R58M", "Pixel 5", &settings, Some(&portrait()));
         let joined = args.join(" ");
 
         assert!(joined.contains("-s R58M"));
@@ -161,6 +171,15 @@ mod tests {
         assert!(joined.contains("--always-on-top"));
         assert!(joined.contains("--max-size=1080"));
         assert!(joined.contains("--audio-source=playback"));
+    }
+
+    #[test]
+    fn not_topmost_by_default() {
+        let joined = build_args("dev", "t", &Settings::default(), None).join(" ");
+        assert!(
+            !joined.contains("--always-on-top"),
+            "covered console by default: {joined}"
+        );
     }
 
     #[test]
@@ -248,6 +267,7 @@ mod tests {
             "stayAwake": props["stayAwake"]["default"],
             "lockOrientation": props["lockOrientation"]["default"],
             "orientation": props["orientation"]["default"],
+            "alwaysOnTop": props["alwaysOnTop"]["default"],
         });
         let settings: Settings = serde_json::from_value(from_manifest).expect("settings");
 
@@ -258,5 +278,6 @@ mod tests {
         assert_eq!(settings.stay_awake, defaults.stay_awake);
         assert_eq!(settings.lock_orientation, defaults.lock_orientation);
         assert_eq!(settings.orientation, defaults.orientation);
+        assert_eq!(settings.always_on_top, defaults.always_on_top);
     }
 }
