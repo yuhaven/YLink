@@ -66,6 +66,25 @@ powershell -ExecutionPolicy Bypass -File scripts\package-plugin.ps1 -Plugin andr
 
 宿主启动时会读取 `plugins/*/plugin.json`，按 manifest 渲染界面；插件进程通过 stdio 上的 JSON-RPC 通信。协议见 [docs/plugin-api.md](docs/plugin-api.md)。
 
+## 便携版
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1
+```
+
+产出 `dist/CastPane/`（免安装目录）和 `dist/CastPane-v0.1.0-win64.zip`。发布版从 **exe 同目录** 的 `plugins/` 加载插件，所以整个文件夹可以随意搬动。
+
+目录结构：
+
+```
+CastPane/
+  CastPane.exe
+  plugins/android/{plugin.json, bin/}
+  plugins/airplay/{plugin.json, bin/}
+  LICENSE
+  README.md
+```
+
 ## 设计文档
 
 - [插件协议 v0](docs/plugin-api.md)
