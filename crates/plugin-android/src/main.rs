@@ -236,11 +236,11 @@ fn config() -> &'static Mutex<Option<Config>> {
 
 /// Spawn the engine for a config and wire up waiter, overlay and pinning.
 fn launch(cfg: &Config) -> Result<String, String> {
-    let (scrcpy_path, _adb) = engine_paths();
+    let (scrcpy_path, _adb_path) = engine_paths();
     let settings = cfg.settings.clone();
     let mut window = cfg.window.clone();
 
-    if settings.orientation == "landscape" {
+    if true {
         if let Some((x, y, width, height)) = landscape_rect() {
             window = Some(scrcpy::WindowSpec {
                 x,
@@ -274,6 +274,7 @@ fn launch(cfg: &Config) -> Result<String, String> {
     #[cfg(windows)]
     {
         overlay::attach(pid, &cfg.device_id);
+        std::thread::spawn(move || window::place_right(pid));
         if let Some(w) = window.as_ref() {
             let spec_json = json!({
                 "x": w.x,
@@ -346,11 +347,8 @@ fn toggle_orientation() {
     let Some(mut cfg) = config().lock().unwrap().clone() else {
         return;
     };
-    cfg.settings.orientation = if cfg.settings.orientation == "landscape" {
-        "portrait".to_string()
-    } else {
-        "landscape".to_string()
-    };
+    let current = cfg.settings.orientation.parse::<u32>().unwrap_or(0);
+    cfg.settings.orientation = ((current + 90) % 360).to_string();
     restart_with(cfg);
 }
 

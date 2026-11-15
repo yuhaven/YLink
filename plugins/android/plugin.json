@@ -50,13 +50,8 @@
       },
       "orientation": {
         "type": "string",
-        "enum": [
-          "portrait",
-          "landscape",
-          "auto"
-        ],
-        "default": "portrait",
-        "title": "画面方向"
+        "default": "0",
+        "title": "??????"
       },
       "lockPosition": {
         "type": "boolean",

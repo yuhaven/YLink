@@ -130,6 +130,23 @@ pub fn sdk_level(adb: &Path, serial: &str) -> Option<u32> {
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
 }
 
+/// Current display rotation in quarter turns (0..3), read from the input
+/// service. `settings get system user_rotation` stays 0 while accelerometer
+/// rotation is on, so it cannot be used.
+pub fn surface_rotation(adb: &Path, serial: &str) -> Option<u32> {
+    let output = Command::new(adb)
+        .args(["-s", serial, "shell", "dumpsys", "input"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        if let Some(rest) = line.trim().strip_prefix("SurfaceOrientation:") {
+            return rest.trim().parse().ok();
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

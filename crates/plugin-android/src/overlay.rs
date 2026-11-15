@@ -17,8 +17,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject,
-    DrawTextW, Ellipse, EndPaint, FillRect, FillRgn, GetStockObject, NULL_BRUSH,
+    BeginPaint, CreateFontW, CreatePen, CreateSolidBrush, DeleteObject,
+    DrawTextW, Ellipse, EndPaint, FillRect, GetStockObject, NULL_BRUSH,
     Polygon, Rectangle, SelectObject, SetBkMode, SetTextColor, CLEARTYPE_QUALITY, DEFAULT_CHARSET,
     DEFAULT_PITCH, DT_CENTER, DT_SINGLELINE, DT_VCENTER, HGDIOBJ, PAINTSTRUCT, TRANSPARENT,
 };

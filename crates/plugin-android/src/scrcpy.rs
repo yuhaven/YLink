@@ -17,7 +17,7 @@ fn default_true() -> bool {
     true
 }
 fn default_orientation() -> String {
-    "portrait".to_string()
+    "0".to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -93,25 +93,26 @@ pub fn build_args(
     if settings.stay_awake {
         args.push("--stay-awake".to_string());
     }
+    // Rotate the captured video only. Rotating the device display would turn
+    // the phone's own screen too, and a portrait-locked app cannot relayout
+    // anyway. 0 means "as the phone shows it", so it is never upside down.
     match settings.orientation.as_str() {
-        // `@` locks the rotation to the given angle, in the device's natural
-        // orientation. 0 = portrait, 90 = landscape.
-        "portrait" => args.push("--capture-orientation=@0".to_string()),
-        "landscape" => args.push("--capture-orientation=@90".to_string()),
-        _ => {
-            // "auto": let the device decide, but still honour lock_orientation
-            // by pinning to the initial orientation.
+        "auto" => {
             if settings.lock_orientation {
                 args.push("--capture-orientation=@".to_string());
             }
         }
+        angle => {
+            let angle = angle.parse::<u32>().unwrap_or(0) % 360;
+            args.push(format!("--capture-orientation=@{angle}"));
+        }
     }
 
     if let Some(w) = window {
+        // Size follows the video aspect (the phone decides it); only the
+        // position is ours, so a rotated picture is never squashed.
         args.push(format!("--window-x={}", w.x));
         args.push(format!("--window-y={}", w.y));
-        args.push(format!("--window-width={}", w.width));
-        args.push(format!("--window-height={}", w.height));
         // Native frame on purpose: title bar, minimise, maximise and close.
         // Never topmost: it would cover the console.
         let _ = w;
@@ -161,8 +162,6 @@ mod tests {
 
         assert!(joined.contains("-s R58M"));
         assert!(joined.contains("--window-x=700"));
-        assert!(joined.contains("--window-width=527"));
-        assert!(joined.contains("--window-height=936"));
         // Native frame on purpose: title bar, minimise, maximise and close.
         assert!(
             !joined.contains("--window-borderless"),
@@ -229,7 +228,7 @@ mod tests {
     #[test]
     fn landscape_rotates_the_capture() {
         let settings = Settings {
-            orientation: "landscape".to_string(),
+            orientation: "90".to_string(),
             ..Settings::default()
         };
         let joined = build_args("dev", "t", &settings, None).join(" ");

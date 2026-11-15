@@ -155,8 +155,6 @@ fn casts_to_a_mock_device_with_portrait_geometry() {
     }
     let args = std::fs::read_to_string(&args_file).expect("scrcpy arguments were not recorded");
     assert!(args.contains("-s MOCK123456"), "missing serial: {args}");
-    assert!(args.contains("--window-width=527"), "missing width: {args}");
-    assert!(args.contains("--window-height=936"), "missing height: {args}");
     assert!(
         !args.contains("--window-borderless"),
         "cast window must keep its native title bar: {args}"

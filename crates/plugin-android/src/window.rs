@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN, SWP_NOZORDER,
     EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
     HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
 };
@@ -119,6 +120,35 @@ fn place(hwnd: HWND, x: i32, y: i32, width: u32, height: u32, topmost: bool) {
             height as i32,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER,
         );
+    }
+}
+
+/// Right-align a freshly created window once, so an auto-sized landscape
+/// window never runs off the screen edge.
+pub fn place_right(pid: u32) {
+    for _ in 0..80 {
+        if let Some(hwnd) = find_window(pid) {
+            unsafe {
+                let mut rect: RECT = std::mem::zeroed();
+                if GetWindowRect(hwnd, &mut rect) != 0 {
+                    let width = rect.right - rect.left;
+                    let height = rect.bottom - rect.top;
+                    let screen_w = GetSystemMetrics(SM_CXSCREEN);
+                    let screen_h = GetSystemMetrics(SM_CYSCREEN);
+                    SetWindowPos(
+                        hwnd,
+                        std::ptr::null_mut(),
+                        (screen_w - width - 40).max(0),
+                        ((screen_h - height) / 2).max(0),
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+                }
+            }
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
