@@ -1,9 +1,12 @@
-//! Take over the scrcpy window: strip decorations, pin the position.
+//! Optional position pinning for the scrcpy window.
 //!
-//! scrcpy's own `--window-borderless` left `WS_CAPTION` in place on Windows,
-//! so the plugin removes the frame itself and then keeps the window where the
-//! host asked it to be. Pinning matters because a frameless topmost window is
-//! easy to nudge by accident and hard to put back.
+//! The window keeps its native Windows frame: title bar, minimise, maximise and
+//! close all behave the way users expect, and dragging works out of the box.
+//! An earlier version stripped the frame and tried to re-implement dragging;
+//! that removed the standard controls and broke on cross-process subclassing,
+//! so it is gone.
+//!
+//! The only thing left here is the optional "lock position" feature.
 
 #![cfg(windows)]
 
@@ -11,14 +14,10 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetCursorPos, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic,
-    IsWindow, IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_STYLE,
-    HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SW_SHOWNOACTIVATE, WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU,
-    WS_THICKFRAME,
+    EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetWindowPos,
+    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOSIZE,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +30,7 @@ pub struct Spec {
 
 /// Read the `window` object sent with `session.start`.
 ///
-/// The size is deliberately ignored: the engine owns it, so the video is never
+/// Size is ignored on purpose: the engine owns it, so the video is never
 /// stretched.
 pub fn spec_from_json(value: &Value, lock_position: bool) -> Option<Spec> {
     Some(Spec {
@@ -85,88 +84,6 @@ pub fn find_window(pid: u32) -> Option<HWND> {
     }
 }
 
-/// Height of the invisible strip at the top that behaves like a title bar.
-const DRAG_BAND: i32 = 12;
-
-/// A frameless window cannot be dragged, and `SetWindowLongPtrW(GWLP_WNDPROC)`
-/// does not work across processes, so the plugin implements the drag itself:
-/// watch the left button over the top strip and move the window with it.
-fn drag_loop(hwnd_raw: isize, stop: Arc<AtomicBool>) {
-    let hwnd = hwnd_raw as HWND;
-    let mut dragging = false;
-    let mut grab = (0i32, 0i32);
-
-    loop {
-        if stop.load(Ordering::Relaxed) || unsafe { IsWindow(hwnd) } == 0 {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(16));
-
-        unsafe {
-            let down = (GetAsyncKeyState(VK_LBUTTON as i32) as i16) < 0;
-            if !dragging {
-                if !down {
-                    continue;
-                }
-                let mut cursor = POINT { x: 0, y: 0 };
-                let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-                if GetCursorPos(&mut cursor) == 0 || GetWindowRect(hwnd, &mut rect) == 0 {
-                    continue;
-                }
-                let in_strip = cursor.x >= rect.left
-                    && cursor.x < rect.right
-                    && cursor.y >= rect.top
-                    && cursor.y < rect.top + DRAG_BAND;
-                if in_strip {
-                    grab = (cursor.x - rect.left, cursor.y - rect.top);
-                    dragging = true;
-                }
-            } else if down {
-                let mut cursor = POINT { x: 0, y: 0 };
-                if GetCursorPos(&mut cursor) != 0 {
-                    SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        cursor.x - grab.0,
-                        cursor.y - grab.1,
-                        0,
-                        0,
-                        SWP_NOSIZE | SWP_NOACTIVATE,
-                    );
-                }
-            } else {
-                dragging = false;
-            }
-        }
-    }
-}
-
-/// Remove the frame and make the window un-draggable through normal means:
-/// no caption, no resize border, no system menu (so Alt+Space has no "Move").
-///
-/// Returns true when something was actually changed.
-fn strip_frame(hwnd: HWND) -> bool {
-    unsafe {
-        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
-        let stripped = style
-            & !(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-        if stripped == style {
-            return false;
-        }
-        SetWindowLongPtrW(hwnd, GWL_STYLE, stripped as isize);
-        SetWindowPos(
-            hwnd,
-            std::ptr::null_mut(),
-            0,
-            0,
-            0,
-            0,
-            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
-        );
-        true
-    }
-}
-
 fn rect_of(hwnd: HWND) -> Option<(i32, i32, u32, u32)> {
     unsafe {
         let mut rect = RECT {
@@ -178,9 +95,12 @@ fn rect_of(hwnd: HWND) -> Option<(i32, i32, u32, u32)> {
         if GetWindowRect(hwnd, &mut rect) == 0 {
             return None;
         }
-        let width = (rect.right - rect.left).max(1) as u32;
-        let height = (rect.bottom - rect.top).max(1) as u32;
-        Some((rect.left, rect.top, width, height))
+        Some((
+            rect.left,
+            rect.top,
+            (rect.right - rect.left).max(1) as u32,
+            (rect.bottom - rect.top).max(1) as u32,
+        ))
     }
 }
 
@@ -202,12 +122,13 @@ fn place(hwnd: HWND, x: i32, y: i32, width: u32, height: u32, topmost: bool) {
     }
 }
 
-/// Wait for the engine window, strip its frame, then hold it in place.
-///
-/// The locked size is whatever the engine chose (scrcpy locks the aspect ratio
-/// to the video); only the position is ours. Forcing our own width would
-/// stretch the picture.
+/// Keep the window where the host asked for it. Only started when the user
+/// enables "固定窗口位置"; the window itself is a normal framed window.
 pub fn enforce(pid: u32, spec: Spec, stop: Arc<AtomicBool>) {
+    if !spec.lock_position {
+        return;
+    }
+
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut hwnd = None;
     while Instant::now() < deadline {
@@ -221,71 +142,12 @@ pub fn enforce(pid: u32, spec: Spec, stop: Arc<AtomicBool>) {
         std::thread::sleep(Duration::from_millis(150));
     }
 
-    let Some(mut hwnd) = hwnd else { return };
-    strip_frame(hwnd);
-
-    if !spec.lock_position {
-        let stop = Arc::clone(&stop);
-        let raw = hwnd as isize;
-        std::thread::spawn(move || drag_loop(raw, stop));
-    }
-
-    // Position is ours; size belongs to the engine (it locks the aspect ratio
-    // to the video, and forcing our own size would stretch the picture).
-    if let Some((_, _, width, height)) = rect_of(hwnd) {
-        place(hwnd, spec.x, spec.y, width, height, spec.topmost);
-    }
+    let Some(hwnd) = hwnd else { return };
 
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(400));
-
         if unsafe { IsWindow(hwnd) } == 0 {
-            match find_window(pid) {
-                Some(found) => {
-                    hwnd = found;
-                    strip_frame(hwnd);
-                    if !spec.lock_position {
-                        let stop = Arc::clone(&stop);
-                        let raw = hwnd as isize;
-                        std::thread::spawn(move || drag_loop(raw, stop));
-                    }
-                }
-                None => return,
-            }
-            continue;
-        }
-
-        // SDL may re-apply its own style shortly after the window appears.
-        strip_frame(hwnd);
-
-        // Minimising or hiding it (some shells do this when the console
-        // window is minimised) leaves a black/vanished cast; bring it back.
-        unsafe {
-            if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
-                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                if let Some((_, _, width, height)) = rect_of(hwnd) {
-                    place(hwnd, spec.x, spec.y, width, height, spec.topmost);
-                }
-            }
-        }
-
-        if !spec.lock_position {
-            // Still keep it above other windows: maximising the main window
-            // must not bury the cast.
-            if spec.topmost {
-                unsafe {
-                    SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                    );
-                }
-            }
-            continue;
+            return;
         }
         if let Some((x, y, width, height)) = rect_of(hwnd) {
             if (x - spec.x).abs() > 2 || (y - spec.y).abs() > 2 {

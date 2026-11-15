@@ -54,7 +54,20 @@ def measure():
     if not win:
         return None
     hwnd, x, y, w, h = win
-    return {"hwnd": hwnd, "x": x, "y": y, "w": w, "h": h, "ratio": round(w / h, 3)}
+    style = user32.GetWindowLongW(hwnd, -16)
+    exstyle = user32.GetWindowLongW(hwnd, -20)
+    return {
+        "hwnd": hwnd,
+        "x": x,
+        "y": y,
+        "w": w,
+        "h": h,
+        "ratio": round(w / h, 3),
+        "caption": bool(style & 0x00C00000),
+        "minimize_box": bool(style & 0x00020000),
+        "maximize_box": bool(style & 0x00010000),
+        "topmost": bool(exstyle & 0x00000008),
+    }
 
 
 def drag(dx: int):

@@ -108,9 +108,8 @@ pub fn build_args(
         args.push(format!("--window-y={}", w.y));
         args.push(format!("--window-width={}", w.width));
         args.push(format!("--window-height={}", w.height));
-        if w.borderless {
-            args.push("--window-borderless".to_string());
-        }
+        // Native frame on purpose: title bar, minimise, maximise and close.
+        // `--window-borderless` is deliberately not passed.
         if w.always_on_top {
             args.push("--always-on-top".to_string());
         }
@@ -154,7 +153,11 @@ mod tests {
         assert!(joined.contains("--window-x=700"));
         assert!(joined.contains("--window-width=527"));
         assert!(joined.contains("--window-height=936"));
-        assert!(joined.contains("--window-borderless"));
+        // Native frame on purpose: title bar, minimise, maximise and close.
+        assert!(
+            !joined.contains("--window-borderless"),
+            "the cast window must keep its Windows title bar: {joined}"
+        );
         assert!(joined.contains("--always-on-top"));
         assert!(joined.contains("--max-size=1080"));
         assert!(joined.contains("--audio-source=playback"));

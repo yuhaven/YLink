@@ -1,0 +1,189 @@
+# 故障排查：横屏无效 / 点击无反应 / 拖不动
+
+日期：2026-11-15 ｜ 版本：v0.1.0 ｜ 状态：已定位并修复（真机验证待设备在线）
+
+---
+
+## 一、现象
+
+| 编号 | 现象 | 发生条件 |
+|---|---|---|
+| A | 投屏窗口没有标题栏，不能拖动、不能最大化/最小化/关闭 | 一直是 |
+| B | 在界面把「画面方向」改成 landscape，投出来仍是竖屏 | 一直是 |
+| C | 点击应用主窗口（控制台）后“完全没有反应” | 偶发、重装后更明显 |
+
+---
+
+## 二、逐层排查与证据
+
+排查原则：**从用户动作开始，一层一层往里剥，每层都要有可观测证据**（日志 / 进程 / 窗口句柄 / 数据库文件），不靠猜。
+
+### 第 1 层：UI 是否响应
+
+**手段**：给命令加文件日志 `%TEMP%\castpane.log`，并在 E2E 里记录“点击到窗口出现”的耗时。
+
+**发现**：
+- 修复前，点击后命令迟迟不返回；`time_to_window` 曾达到 15 秒以上。
+- 关键代码：命令是同步 `#[tauri::command] fn connect(...)`，Tauri 会在 **UI 线程**执行它；而 `host.call("session.start")` 最长等 30 秒（插件超时）。
+- 结论：**插件一慢，整个窗口就卡住**。用户感知就是“点了没反应”，连拖动窗口、点关闭都无响应。
+
+**修复**：所有会碰插件的命令改为 `async` + `spawn_blocking`，插件工作全部移出 UI 线程。修复后 `time_to_window` 降到 **1.6 秒**。
+
+### 第 2 层：设备列表为什么是空的
+
+**手段**：日志里记录 `discover(id): N device(s)`，与 `adb devices` 对照。
+
+**发现**：
+- `adb devices` 明明有设备，日志却是 `discover(android): 0 device(s)`。
+- 原因：把 `discover` 异步化时，我在“等 500ms 让插件发事件”的窗口期**释放了互斥锁**；而 UI 每秒轮询 `poll_events`，把 `device.found` 事件**先一步取走了**。等 `discover` 回来收割时队列已经空了。
+- 设备列表为空 → 不渲染「投屏」按钮 → 用户点界面当然“没有反应”。
+
+**修复**：`discover` 在收集事件期间持有锁（此时已在阻塞线程上，不影响 UI），保证事件不被轮询偷走。
+
+### 第 3 层：为什么设置了 landscape 还是竖屏
+
+**手段**：在 `connect` 里打印收到的 settings，与实际界面选择对照。
+
+**证据（修复前）**：
+
+```json
+connect(android, ...): settings={"orientation":"auto", ...}
+```
+
+界面明明选的是 landscape，传下去的却是 `auto`。
+
+**两处原因叠加**：
+
+1. **localStorage 影子状态**：设置同时写 `settings.json` 和浏览器 localStorage，读取时 localStorage 作为后备。重装/换包后文件没了，localStorage 里的旧值（`auto`）反而生效，把用户的新选择盖掉。
+2. **测试把配置写坏了**：我的自动化曾误选 AirPlay 卡片的「渲染器」下拉框（它的值恰好也是 `auto`），把 `orientation: auto` 写进了配置。
+
+**修复**：删除 localStorage 读取路径，`settings.json` 成为唯一事实来源。
+
+### 第 4 层：为什么窗口没有标题栏 / 拖不动
+
+**手段**：用 Win32 `GetWindowLongW(GWL_STYLE)` 读窗口样式，检查 `WS_CAPTION` 位。
+
+**证据**：`caption=false, minimize_box=false, maximize_box=false`。
+
+**原因**：
+- 我为了“极简”主动去掉了 `WS_CAPTION/WS_THICKFRAME/WS_SYSMENU`，于是标题栏、最小化、最大化、关闭、拖动**全部消失**。
+- 随后想用 `SetWindowLongPtrW(hwnd, GWLP_WNDPROC, ...)` 子类化返回 `HTCAPTION` 补回拖动——**这个 API 不能跨进程**（窗口属于 scrcpy 进程），调用静默失败，所以什么都没发生。
+- 再后来改成轮询鼠标自绘拖动，虽然能拖，但仍然没有标准窗口按钮。
+
+**修复**：放弃自绘，直接使用 Windows 原生窗口——不再传 `--window-borderless`，标题栏/最小化/最大化/关闭/拖动全部由系统提供。仅在用户显式开启「固定窗口位置」时才做位置固化。
+
+### 第 5 层：产物是不是新的
+
+**手段**：对比 `target/release/android-plugin.exe` 与 `dist/.../android-plugin.exe` 的时间戳，并在二进制里搜 `--window-borderless`。
+
+**证据**：dist 里的插件是 **22:45** 的旧文件，而源码 22:52 就改完了；二进制里仍含 `--window-borderless`。原因是打包脚本的复制步骤在文件被占用时没生效（且没有校验）。
+
+**修复方向**：打包后校验（见“改进措施”）。
+
+### 第 6 层：设备本身
+
+**手段**：E2E 增加前置检查。
+
+**发现**：排查过程中手机掉线（`adb devices` 为空），此时测试只报“没有窗口”，误导性极强。
+
+**修复**：E2E 在启动应用前检查 `adb devices`，无设备直接输出：
+
+```
+PRECONDITION FAILED: no Android device in "adb devices".
+exit=2
+```
+
+---
+
+## 三、根因归纳
+
+```
+用户点「投屏」没反应
+├── 直接原因 1：UI 线程被同步命令阻塞（最长 30s）        → 改 async + spawn_blocking
+├── 直接原因 2：device.found 被 poll_events 抢走          → 收集期间持锁
+│      └── 后果：设备列表空 → 没有「投屏」按钮
+├── 直接原因 3：localStorage 旧值覆盖 settings.json       → 删除 localStorage 路径
+├── 直接原因 4：dist 里的插件是旧产物                     → 打包校验（待做）
+└── 环境原因：手机掉线                                    → E2E 前置检查
+```
+
+横屏“无效”的本质不是协议映射错，而是**设置根本没传到位**（第 3 层）。
+
+拖动/标题栏问题的本质是**用自绘替代了平台能力**（第 4 层）。
+
+---
+
+## 四、为什么我会这么做（方法论复盘）
+
+你指出的“操作和思路没有按可实现的角度”，具体表现在四点：
+
+### 1. 把“插件能跑”当成“功能可用”
+
+我用脚本直接给插件发 JSON-RPC，证明“能拉起 scrcpy”，就认为投屏功能完成。但用户路径是 **点界面 → Tauri 命令 → 插件 → 窗口**，中间两段从未被验证。
+
+> 这是把“组件测试”当成了“验收测试”。
+
+### 2. 用自绘去补平台能力
+
+需求是“能拖动、能最小化最大化关闭”。Windows 原生窗口本来就全都有；我先把它们拆掉，再试图用子类化、轮询鼠标补回来，既增加代码又引入新故障。
+
+> 先问“平台有没有现成的”，再问“要不要自己写”。能不减的能力不要减。
+
+### 3. 测试环境不干净
+
+- 没清 `settings.json` / localStorage / 旧进程 / WebView2 进程；
+- 自动化误点了别的下拉框，把状态写坏；
+- 设备掉线没有前置检查。
+
+> 测试的结果取决于环境；环境不隔离，测试就在测“上一轮的状态”。
+
+### 4. 一次改太多层
+
+同一轮里同时改了：窗口样式、命令异步化、设置存储、打包脚本。任何一处出错，现象都一样（没有窗口），排查成本成倍上升。
+
+> 一次只改一层，改完立刻用同一条 E2E 验证。
+
+---
+
+## 五、改进措施
+
+### 已落地
+
+| 措施 | 位置 |
+|---|---|
+| 命令全部移出 UI 线程 | `apps/desktop/src-tauri/src/lib.rs`（`blocking()` + `async` 命令） |
+| 设备事件收集期间持锁，防止被轮询偷走 | 同上 `discover()` |
+| 删除 localStorage，`settings.json` 唯一来源 | `apps/desktop/src/main.ts` |
+| 使用 Windows 原生窗口（标题栏/最小化/最大化/关闭/拖动） | `crates/plugin-android/src/scrcpy.rs`（不再传 `--window-borderless`） |
+| E2E 前置检查设备 | `scripts/e2e_cast.ps1` |
+| E2E 校验窗口有标题栏、有最小化/最大化按钮、出现耗时 ≤5s | 同上 |
+| 界面显示版本号，避免旧进程冒充 | 主窗口状态栏 |
+| 设置文件 BOM 不再产生（测试侧） | `scripts/e2e_cast.ps1` |
+
+### 待落地（下一轮）
+
+1. **打包产物校验**：打包后检查 `dist/plugins/*/bin/*.exe` 的修改时间不早于 `target/release`，否则报错。
+2. **设置改动即时生效**：改方向后自动重启当前会话，而不是让用户再点一次「投屏」。
+3. **设备掉线提示**：会话中断时在界面明确提示“手机已断开”，而不是静默。
+4. **E2E 覆盖“改下拉框”**：目前下拉框在窗口可视区外，WebView2 的 `<select>` 弹层无法被 UIA 命中；需要先把卡片滚动到可见，或用 `ScrollItemPattern`。当前用「预置 settings.json + 界面回读」替代，覆盖了文件→UI→插件→窗口，唯独没覆盖“鼠标改下拉框”这一步。
+
+---
+
+## 六、验收标准（以后按这个判定“完成”）
+
+一条需求只有同时满足下面三条才算完成：
+
+1. **用户路径可复现**：按用户的操作顺序（点哪里）能观察到预期结果。
+2. **自动化覆盖**：`scripts/e2e_cast.ps1` 对应用例 PASS，且断言的是可观察量（窗口比例、样式位、耗时），不是“命令返回 200”。
+3. **失败可诊断**：出问题时日志、界面、脚本三者之一能直接指出原因，而不是“没窗口”。
+
+本轮修复后的判定项：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation landscape -PresetSettings
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation portrait -PresetSettings
+```
+
+断言：`ratio` 分别 >1.2 / <0.8、`caption=true`、`minimize_box=true`、`maximize_box=true`、`time_to_window ≤ 5`、`moved=true`。
+
+> 说明：本次排查末尾手机掉线，最后两项（真机窗口 + 拖动）未能跑完；设备恢复后应重跑上述两条命令，全绿才算交付。

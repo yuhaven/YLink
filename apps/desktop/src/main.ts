@@ -61,7 +61,12 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Manifest defaults, overlaid with whatever the user chose last time. */
+/** Manifest defaults, overlaid with what is stored next to the executable.
+ *
+ * localStorage is deliberately not consulted: it survived across reinstalls and
+ * silently overrode the user's choice (an old `orientation: auto` made every
+ * landscape selection fall back to portrait).
+ */
 async function loadValues(
   id: string,
   schema: JsonSchema,
@@ -71,35 +76,19 @@ async function loadValues(
     if (prop.default !== undefined) values[key] = prop.default;
   }
 
-  let stored: Record<string, unknown> | null = null;
   try {
-    // Portable: settings.json sits next to the executable.
-    const fromFile = await invoke<Record<string, unknown> | null>("load_settings", { id });
-    if (fromFile && typeof fromFile === "object") stored = fromFile;
+    const stored = await invoke<Record<string, unknown> | null>("load_settings", { id });
+    if (stored && typeof stored === "object") Object.assign(values, stored);
   } catch {
-    /* browser preview: no backend */
+    /* preview mode: no backend */
   }
-  if (!stored) {
-    try {
-      const raw = localStorage.getItem(`castpane.settings.${id}`);
-      if (raw) stored = JSON.parse(raw);
-    } catch {
-      /* corrupt storage is not fatal */
-    }
-  }
-  if (stored) Object.assign(values, stored);
   return values;
 }
 
 function saveValues(id: string, values: Record<string, unknown>) {
   void invoke("save_settings", { id, values }).catch(() => {
-    /* file may be read-only; the localStorage mirror still has it */
+    /* read-only folder: settings last for this session only */
   });
-  try {
-    localStorage.setItem(`castpane.settings.${id}`, JSON.stringify(values));
-  } catch {
-    /* storage unavailable: settings last for this session only */
-  }
 }
 
 /** Render one declarative control. Unknown types are skipped, not fatal. */

@@ -104,13 +104,16 @@ fn list_plugins(state: tauri::State<'_, AppState>) -> Vec<PluginInfo> {
 }
 
 #[tauri::command]
-fn start_plugin(id: String, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut plugins = lock_plugins(&state);
-    let host = plugins
-        .iter_mut()
-        .find(|p| p.manifest().id == id)
-        .ok_or_else(|| format!("plugin `{id}` not found"))?;
-    host.start().map_err(|e| e.to_string())
+async fn start_plugin(id: String, app: tauri::AppHandle) -> Result<(), String> {
+    blocking(app, move |state| {
+        let mut plugins = lock_plugins(state);
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
+        host.start().map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Minimal file log: the UI can only show one status line, and a stuck
@@ -128,21 +131,41 @@ fn log_line(message: &str) {
 }
 
 /// Lock the plugin list even if a previous command panicked while holding it.
-fn lock_plugins<'a>(
-    state: &'a tauri::State<'_, AppState>,
-) -> std::sync::MutexGuard<'a, Vec<PluginHost>> {
+fn lock_plugins(state: &AppState) -> std::sync::MutexGuard<'_, Vec<PluginHost>> {
     state
         .plugins
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Run plugin work off the webview thread.
+///
+/// Synchronous `#[tauri::command]` functions run on the UI thread, so a plugin
+/// call that takes seconds (first adb start, a hung engine) freezes the whole
+/// window. That is exactly what "clicking does nothing" looks like.
+async fn blocking<T, F>(app: tauri::AppHandle, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppState) -> Result<T, String> + Send + 'static,
+{
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        work(state.inner())
+    })
+    .await
+    .map_err(|e| format!("command task failed: {e}"))?
+}
+
 /// Launch the plugin if needed, ask it to scan, and collect `device.found`.
 #[tauri::command]
-fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceInfo>, String> {
-    log_line(&format!("discover({id}): begin"));
-    {
-        let mut plugins = lock_plugins(&state);
+async fn discover(id: String, app: tauri::AppHandle) -> Result<Vec<DeviceInfo>, String> {
+    blocking(app, move |state| {
+        log_line(&format!("discover({id}): begin"));
+        // Hold the lock across the settle window on purpose: `poll_events`
+        // runs every second and would otherwise drain `device.found` before
+        // this command can collect it, leaving the device list empty.
+        let mut plugins = lock_plugins(state);
         let host = plugins
             .iter_mut()
             .find(|p| p.manifest().id == id)
@@ -151,118 +174,113 @@ fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceI
         if !host.is_running() {
             host.start().map_err(|e| e.to_string())?;
         }
-        // Discard stale events from a previous scan.
         let _ = host.drain_events();
-
         host.call("discover.start", json!({}))
             .map_err(|e| e.to_string())?;
-    } // release the lock: discovery is asynchronous and other plugins matter
 
-    log_line(&format!("discover({id}): plugins released, waiting"));
-    std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(500));
 
-    let mut plugins = lock_plugins(&state);
-    let host = plugins
-        .iter_mut()
-        .find(|p| p.manifest().id == id)
-        .ok_or_else(|| format!("plugin `{id}` not found"))?;
-
-    let mut devices = Vec::new();
-    for event in host.drain_events() {
-        if let PluginEvent::Notification { method, params } = event {
-            if method == "device.found" {
-                devices.push(DeviceInfo {
-                    id: params["id"].as_str().unwrap_or_default().to_string(),
-                    name: params["name"].as_str().unwrap_or_default().to_string(),
-                    detail: params["detail"].as_str().unwrap_or("device").to_string(),
-                });
+        let mut devices = Vec::new();
+        for event in host.drain_events() {
+            if let PluginEvent::Notification { method, params } = event {
+                if method == "device.found" {
+                    devices.push(DeviceInfo {
+                        id: params["id"].as_str().unwrap_or_default().to_string(),
+                        name: params["name"].as_str().unwrap_or_default().to_string(),
+                        detail: params["detail"].as_str().unwrap_or("device").to_string(),
+                    });
+                }
             }
         }
-    }
-    log_line(&format!("discover({id}): {} device(s)", devices.len()));
-    Ok(devices)
+        log_line(&format!("discover({id}): {} device(s)", devices.len()));
+        Ok(devices)
+    })
+    .await
 }
 
 /// Start a session, placing the window with the core's portrait geometry.
 #[tauri::command]
-fn connect(
+async fn connect(
     id: String,
     device_id: String,
     settings: Option<Value>,
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
 ) -> Result<Value, String> {
-    log_line(&format!(
-        "connect({id}, {device_id}): settings={}",
-        settings
-            .as_ref()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "{}".into())
-    ));
-    let monitor = app
-        .primary_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no monitor detected".to_string())?;
+    let handle = app.clone();
+    blocking(app, move |state| {
+        log_line(&format!(
+            "connect({id}, {device_id}): settings={}",
+            settings
+                .as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "{}".into())
+        ));
 
-    let position = monitor.position();
-    let size = monitor.size();
-    // Approximation of the work area: leave room for the taskbar.
-    let work = Rect::new(
-        position.x,
-        position.y,
-        size.width,
-        size.height.saturating_sub(80),
-    );
-    let spec = WindowSpec::portrait(work);
-    let window = json!({
-        "x": spec.rect.x,
-        "y": spec.rect.y,
-        "width": spec.rect.width,
-        "height": spec.rect.height,
-        "borderless": spec.borderless,
-        "alwaysOnTop": spec.always_on_top,
-    });
+        let monitor = handle
+            .primary_monitor()
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "no monitor detected".to_string())?;
 
-    let mut plugins = lock_plugins(&state);
-    let host = plugins
-        .iter_mut()
-        .find(|p| p.manifest().id == id)
-        .ok_or_else(|| format!("plugin `{id}` not found"))?;
+        let position = monitor.position();
+        let size = monitor.size();
+        // Approximation of the work area: leave room for the taskbar.
+        let work = Rect::new(
+            position.x,
+            position.y,
+            size.width,
+            size.height.saturating_sub(80),
+        );
+        let spec = WindowSpec::portrait(work);
+        let window = json!({
+            "x": spec.rect.x,
+            "y": spec.rect.y,
+            "width": spec.rect.width,
+            "height": spec.rect.height,
+            "borderless": spec.borderless,
+            "alwaysOnTop": spec.always_on_top,
+        });
 
-    if !host.is_running() {
-        host.start().map_err(|e| e.to_string())?;
-    }
+        let mut plugins = lock_plugins(state);
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
 
-    host.call(
-        "session.start",
-        json!({
-            "deviceId": device_id,
-            "window": window,
-            "settings": settings.unwrap_or_else(|| json!({})),
-        }),
-    )
-    .map_err(|e| e.to_string())
+        if !host.is_running() {
+            host.start().map_err(|e| e.to_string())?;
+        }
+
+        host.call(
+            "session.start",
+            json!({
+                "deviceId": device_id,
+                "window": window,
+                "settings": settings.unwrap_or_else(|| json!({})),
+            }),
+        )
+        .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Invoke a declarative panel action (`action.<name>`) on a plugin.
 #[tauri::command]
-fn action(
-    id: String,
-    name: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<Value, String> {
-    let mut plugins = lock_plugins(&state);
-    let host = plugins
-        .iter_mut()
-        .find(|p| p.manifest().id == id)
-        .ok_or_else(|| format!("plugin `{id}` not found"))?;
+async fn action(id: String, name: String, app: tauri::AppHandle) -> Result<Value, String> {
+    blocking(app, move |state| {
+        let mut plugins = lock_plugins(state);
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
 
-    if !host.is_running() {
-        host.start().map_err(|e| e.to_string())?;
-    }
+        if !host.is_running() {
+            host.start().map_err(|e| e.to_string())?;
+        }
 
-    host.call(&format!("action.{name}"), json!({}))
-        .map_err(|e| e.to_string())
+        host.call(&format!("action.{name}"), json!({}))
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Shown in the footer so it is obvious which build is running.
