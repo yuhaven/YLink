@@ -76,7 +76,9 @@ def drag(dx: int):
         return None
     _, x, y, w, h = win
     start_x = x + w // 2
-    start_y = y + 6  # inside the 12px drag strip
+    # Middle of the native title bar. y+6 lands on the resize border, which
+    # starts a resize instead of a move.
+    start_y = y + 30
     user32.SetCursorPos(start_x, start_y)
     time.sleep(0.15)
     user32.mouse_event(0x0002, 0, 0, 0, 0)  # left down
@@ -88,6 +90,36 @@ def drag(dx: int):
     return measure()
 
 
+def controls():
+    """Exercise minimise / restore / maximise on the cast window."""
+    win = find_window()
+    if not win:
+        return {"ok": False}
+    hwnd, x, y, w, h = win
+    out = {}
+
+    user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
+    time.sleep(0.6)
+    out["minimized"] = bool(user32.IsIconic(hwnd))
+
+    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    time.sleep(0.6)
+    out["restored"] = not bool(user32.IsIconic(hwnd))
+
+    user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+    time.sleep(0.7)
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    width = rect.right - rect.left
+    out["maximized_width"] = width
+    out["maximized"] = width >= 1900
+
+    user32.ShowWindow(hwnd, 9)
+    time.sleep(0.5)
+    out["ok"] = out["minimized"] and out["restored"] and out["maximized"]
+    return out
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "measure"
     if cmd == "drag":
@@ -95,5 +127,7 @@ if __name__ == "__main__":
         after = drag(int(sys.argv[2]) if len(sys.argv) > 2 else 150)
         print(json.dumps({"before": before, "after": after,
                           "moved": bool(before and after and before["x"] != after["x"])}))
+    elif cmd == "controls":
+        print(json.dumps(controls()))
     else:
         print(json.dumps(measure()))

@@ -39,12 +39,14 @@ docs/plugin-api.md    # 插件契约（先读这个）
 | 位置固定 | 默认**关闭**；打开后拖动会被拉回 | 面板「固定窗口位置」 |
 | 尺寸 | 由引擎按视频宽高比决定，不会被拉伸 | — |
 
-验收用端到端脚本（真实点击 + 模拟拖动）：
+验收用端到端脚本（真实点击下拉框与投屏按钮，再模拟拖动、最小化、最大化）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation landscape
 powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation portrait
 ```
+
+前置条件：手机已连接且 `adb devices` 能看到它，否则脚本会直接报 `PRECONDITION FAILED`（退出码 2）。
 
 复盘见 [docs/postmortem-cast-window.md](docs/postmortem-cast-window.md)。
 

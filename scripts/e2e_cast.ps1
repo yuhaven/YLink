@@ -142,24 +142,31 @@ try {
             }
         }
         else {
+        # Scroll the control into view first (the Android card is below the
+        # fold), then click it and pick by first letter + Enter.
+        try {
+            $combo.GetCurrentPattern(
+                [System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView()
+        } catch { }
+        Start-Sleep -Milliseconds 500
+
         $rect = $combo.Current.BoundingRectangle
         $cx = [int]($rect.X + $rect.Width / 2)
         $cy = [int]($rect.Y + $rect.Height / 2)
         Add-Type -AssemblyName System.Windows.Forms
         [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point($cx, $cy)
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 250
         Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int f, int dx, int dy, int c, int e);' -Name U -Namespace W
         [W.U]::mouse_event(0x0002, 0, 0, 0, 0)
         [W.U]::mouse_event(0x0004, 0, 0, 0, 0)
         Start-Sleep -Milliseconds 500
 
-        for ($i = 0; $i -lt 4; $i++) {
-            if ($valuePattern.Current.Value -eq $Orientation) { break }
-            [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
-            Start-Sleep -Milliseconds 350
-        }
+        $key = if ($Orientation -eq 'landscape') { 'l' } else { 'p' }
+        [System.Windows.Forms.SendKeys]::SendWait($key)
+        Start-Sleep -Milliseconds 400
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-        Start-Sleep -Milliseconds 700
+        Start-Sleep -Milliseconds 800
+
         $now = $valuePattern.Current.Value
         $result.combo_changed = ($now -eq $Orientation)
         if (-not $result.combo_changed) { Write-Host "combo stayed at '$now'" }
@@ -213,6 +220,9 @@ try {
     $result.window = $json | ConvertFrom-Json
 
     if (-not $SkipDrag -and $result.window) {
+        $ctrlJson = & python (Join-Path $PSScriptRoot 'e2e_probe.py') controls
+        $result.controls = $ctrlJson | ConvertFrom-Json
+
         $dragJson = & python (Join-Path $PSScriptRoot 'e2e_probe.py') drag 160
         $result.drag = $dragJson | ConvertFrom-Json
     }
@@ -251,6 +261,9 @@ else {
 if (-not $SkipDrag) {
     if (-not $result.drag -or -not $result.drag.moved) {
         Write-Host 'FAIL: window did not move when dragged'; $ok = $false
+    }
+    if (-not $result.controls -or -not $result.controls.ok) {
+        Write-Host 'FAIL: minimise/maximise did not behave like a normal window'; $ok = $false
     }
 }
 if ($ok) { Write-Host 'PASS'; exit 0 } else { exit 1 }

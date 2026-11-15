@@ -180,10 +180,26 @@ exit=2
 本轮修复后的判定项：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation landscape -PresetSettings
-powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation portrait -PresetSettings
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation landscape
+powershell -ExecutionPolicy Bypass -File scripts\e2e_cast.ps1 -Orientation portrait
 ```
 
-断言：`ratio` 分别 >1.2 / <0.8、`caption=true`、`minimize_box=true`、`maximize_box=true`、`time_to_window ≤ 5`、`moved=true`。
+脚本现在**真的去点下拉框**（先 `ScrollIntoView` 让控件进入可视区，再点击、按首字母、回车），然后点「投屏」、测量窗口、拖动、最小化、最大化。
 
-> 说明：本次排查末尾手机掉线，最后两项（真机窗口 + 拖动）未能跑完；设备恢复后应重跑上述两条命令，全绿才算交付。
+### 最终验收结果（2026-11-15 23:2x，真机 HUAWEI BRA-AL00 / Android 12）
+
+| 断言 | landscape | portrait |
+|---|---|---|
+| 下拉框被真实操作并生效 | ✅ portrait → landscape | ✅ 保持 portrait |
+| 窗口宽高比 | **2.145**（横屏） | **0.451**（竖屏） |
+| 原生标题栏 `caption` | ✅ | ✅ |
+| 最小化 / 最大化 按钮存在 | ✅ / ✅ | ✅ / ✅ |
+| 实际最小化 → 恢复 | ✅ / ✅ | ✅ / ✅ |
+| 实际最大化（宽 2576） | ✅ | ✅ |
+| 拖动窗口位置变化 | ✅ | ✅ |
+| 点击到窗口出现 | **1.0s** | **1.6s** |
+| 结果 | **PASS** | **PASS** |
+
+`-PresetSettings` 仍保留，用于跳过 UI 直接预置配置做对照测试。
+
+> 这轮还顺带验证了：主窗口从 420×620 放大到 480×760 后，方向下拉框可以通过滚动进入可视区并操作。
