@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "apps/desktop/src-tauri"]
+
+[profile.release]
+lto = "thin"
+strip = true

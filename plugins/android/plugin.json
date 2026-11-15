@@ -1,0 +1,48 @@
+{
+  "id": "android",
+  "name": "Android",
+  "version": "0.1.0",
+  "api": 0,
+  "description": "镜像安卓手机画面，内置 scrcpy，USB 或无线",
+  "platforms": ["windows", "macos", "linux"],
+  "entry": "bin/android-plugin.exe",
+  "capabilities": ["discover", "session", "window", "diagnose"],
+  "settings": {
+    "type": "object",
+    "properties": {
+      "maxSize": {
+        "type": "integer",
+        "default": 1080,
+        "minimum": 480,
+        "maximum": 2160,
+        "title": "最大分辨率"
+      },
+      "maxFps": {
+        "type": "integer",
+        "default": 60,
+        "minimum": 15,
+        "maximum": 120,
+        "title": "帧率上限"
+      },
+      "audio": {
+        "type": "boolean",
+        "default": true,
+        "title": "转发音频"
+      },
+      "stayAwake": {
+        "type": "boolean",
+        "default": true,
+        "title": "投屏时保持亮屏"
+      }
+    }
+  },
+  "panel": [
+    { "type": "text", "text": "用数据线连接手机，打开「USB 调试」后自动出现在设备列表。" },
+    { "type": "switch", "key": "audio", "label": "转发音频（Android 11+）" },
+    { "type": "switch", "key": "stayAwake", "label": "投屏时保持亮屏" },
+    { "type": "slider", "key": "maxSize", "label": "最大分辨率", "min": 480, "max": 2160, "step": 1 },
+    { "type": "slider", "key": "maxFps", "label": "帧率上限", "min": 15, "max": 120, "step": 1 },
+    { "type": "divider" },
+    { "type": "button", "action": "rescan", "label": "重新扫描设备" }
+  ]
+}

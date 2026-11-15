@@ -1,0 +1,44 @@
+{
+  "id": "airplay",
+  "name": "AirPlay",
+  "version": "0.1.0",
+  "api": 0,
+  "description": "接收 iPhone / iPad 的屏幕镜像，基于 uxplay",
+  "platforms": ["windows"],
+  "entry": "bin/airplay-plugin.exe",
+  "capabilities": ["discover", "session", "window", "diagnose"],
+  "settings": {
+    "type": "object",
+    "properties": {
+      "receiverName": {
+        "type": "string",
+        "default": "CastPane",
+        "title": "显示名称"
+      },
+      "renderer": {
+        "type": "string",
+        "enum": ["auto", "d3d11", "d3d12"],
+        "default": "auto",
+        "title": "渲染器"
+      },
+      "fullscreen": {
+        "type": "boolean",
+        "default": false,
+        "title": "全屏显示"
+      },
+      "lowLatency": {
+        "type": "boolean",
+        "default": true,
+        "title": "低延迟模式"
+      }
+    }
+  },
+  "panel": [
+    { "type": "text", "text": "在 iPhone / iPad 控制中心点「屏幕镜像」，选择下面的名称。" },
+    { "type": "switch", "key": "lowLatency", "label": "低延迟模式" },
+    { "type": "switch", "key": "fullscreen", "label": "全屏显示" },
+    { "type": "select", "key": "renderer", "label": "渲染器" },
+    { "type": "divider" },
+    { "type": "button", "action": "diagnose", "label": "检查网络与端口" }
+  ]
+}

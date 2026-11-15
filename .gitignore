@@ -1,0 +1,25 @@
+# build output
+/target
+**/target
+
+# dependencies
+node_modules
+**/node_modules
+
+# tauri
+apps/desktop/src-tauri/target
+apps/desktop/dist
+
+# plugin binaries (vendored by fetch-plugins.ps1, not committed)
+plugins/*/bin/
+
+# local state
+*.log
+logs/
+.castpane/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
