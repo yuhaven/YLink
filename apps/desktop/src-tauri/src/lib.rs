@@ -116,23 +116,30 @@ fn start_plugin(id: String, state: tauri::State<'_, AppState>) -> Result<(), Str
 /// Launch the plugin if needed, ask it to scan, and collect `device.found`.
 #[tauri::command]
 fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceInfo>, String> {
+    {
+        let mut plugins = state.plugins.lock().unwrap();
+        let host = plugins
+            .iter_mut()
+            .find(|p| p.manifest().id == id)
+            .ok_or_else(|| format!("plugin `{id}` not found"))?;
+
+        if !host.is_running() {
+            host.start().map_err(|e| e.to_string())?;
+        }
+        // Discard stale events from a previous scan.
+        let _ = host.drain_events();
+
+        host.call("discover.start", json!({}))
+            .map_err(|e| e.to_string())?;
+    } // release the lock: discovery is asynchronous and other plugins matter
+
+    std::thread::sleep(Duration::from_millis(500));
+
     let mut plugins = state.plugins.lock().unwrap();
     let host = plugins
         .iter_mut()
         .find(|p| p.manifest().id == id)
         .ok_or_else(|| format!("plugin `{id}` not found"))?;
-
-    if !host.is_running() {
-        host.start().map_err(|e| e.to_string())?;
-    }
-    // Discard stale events from a previous scan.
-    let _ = host.drain_events();
-
-    host.call("discover.start", json!({}))
-        .map_err(|e| e.to_string())?;
-
-    // Discovery is asynchronous: give the plugin a moment to emit.
-    std::thread::sleep(Duration::from_millis(500));
 
     let mut devices = Vec::new();
     for event in host.drain_events() {

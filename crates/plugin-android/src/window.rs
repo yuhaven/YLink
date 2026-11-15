@@ -23,19 +23,18 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 pub struct Spec {
     pub x: i32,
     pub y: i32,
-    pub width: u32,
-    pub height: u32,
     pub topmost: bool,
     pub lock_position: bool,
 }
 
 /// Read the `window` object sent with `session.start`.
+///
+/// The size is deliberately ignored: the engine owns it, so the video is never
+/// stretched.
 pub fn spec_from_json(value: &Value, lock_position: bool) -> Option<Spec> {
     Some(Spec {
         x: value.get("x")?.as_i64()? as i32,
         y: value.get("y")?.as_i64()? as i32,
-        width: value.get("width")?.as_u64()? as u32,
-        height: value.get("height")?.as_u64()? as u32,
         topmost: value
             .get("alwaysOnTop")
             .and_then(Value::as_bool)
@@ -238,7 +237,7 @@ mod tests {
             "borderless": true, "alwaysOnTop": true
         });
         let spec = spec_from_json(&raw, true).expect("spec");
-        assert_eq!(spec.width, 688);
+        assert_eq!(spec.x, 936);
         assert!(spec.lock_position && spec.topmost);
     }
 

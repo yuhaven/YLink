@@ -40,6 +40,7 @@ def find_window(pid: int):
 
 
 def main() -> int:
+    wait = float(sys.argv[1]) if len(sys.argv) > 1 else 4.0
     proc = subprocess.Popen([str(EXE)])
     try:
         deadline = time.time() + 15
@@ -56,7 +57,7 @@ def main() -> int:
 
         hwnd, rect = window
         user32.SetForegroundWindow(hwnd)
-        time.sleep(1.0)
+        time.sleep(wait)
 
         box = (rect.left, rect.top, rect.right, rect.bottom)
         ImageGrab.grab(bbox=box).save(OUT)
