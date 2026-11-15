@@ -62,21 +62,39 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 /** Manifest defaults, overlaid with whatever the user chose last time. */
-function loadValues(id: string, schema: JsonSchema): Record<string, unknown> {
+async function loadValues(
+  id: string,
+  schema: JsonSchema,
+): Promise<Record<string, unknown>> {
   const values: Record<string, unknown> = {};
   for (const [key, prop] of Object.entries(schema.properties ?? {})) {
     if (prop.default !== undefined) values[key] = prop.default;
   }
+
+  let stored: Record<string, unknown> | null = null;
   try {
-    const raw = localStorage.getItem(`castpane.settings.${id}`);
-    if (raw) Object.assign(values, JSON.parse(raw));
+    // Portable: settings.json sits next to the executable.
+    const fromFile = await invoke<Record<string, unknown> | null>("load_settings", { id });
+    if (fromFile && typeof fromFile === "object") stored = fromFile;
   } catch {
-    /* corrupt storage is not fatal */
+    /* browser preview: no backend */
   }
+  if (!stored) {
+    try {
+      const raw = localStorage.getItem(`castpane.settings.${id}`);
+      if (raw) stored = JSON.parse(raw);
+    } catch {
+      /* corrupt storage is not fatal */
+    }
+  }
+  if (stored) Object.assign(values, stored);
   return values;
 }
 
 function saveValues(id: string, values: Record<string, unknown>) {
+  void invoke("save_settings", { id, values }).catch(() => {
+    /* file may be read-only; the localStorage mirror still has it */
+  });
   try {
     localStorage.setItem(`castpane.settings.${id}`, JSON.stringify(values));
   } catch {
@@ -233,7 +251,7 @@ function renderDevices(
   return () => void run();
 }
 
-function renderCard(plugin: PluginInfo) {
+async function renderCard(plugin: PluginInfo) {
   const card = h("div", "card");
   const head = h("div", "card-head");
   head.append(
@@ -249,7 +267,7 @@ function renderCard(plugin: PluginInfo) {
   };
 
   const body = h("div", "card-body");
-  const values = loadValues(plugin.id, plugin.schema);
+  const values = await loadValues(plugin.id, plugin.schema);
 
   const onAction = async (name: string) => {
     if (!name) return;
@@ -300,7 +318,7 @@ async function load() {
       app.append(h("p", "empty", "没有找到插件。检查 plugins/ 目录。"));
       return;
     }
-    for (const plugin of plugins) renderCard(plugin);
+    for (const plugin of plugins) await renderCard(plugin);
     setStatus(`${plugins.length} 个插件`);
   } catch (err) {
     // Running in a plain browser (vite) without the Tauri backend.

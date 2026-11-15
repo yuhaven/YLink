@@ -121,6 +121,8 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1
 
 产出 `dist/CastPane/`（免安装目录）和 `dist/CastPane-v0.1.0-win64.zip`。发布版从 **exe 同目录** 的 `plugins/` 加载插件，所以整个文件夹可以随意搬动。
 
+设置也存在 exe 同目录的 `settings.json`，整个文件夹搬到另一台机器后设置仍然有效。
+
 目录结构：
 
 ```

@@ -6,6 +6,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
 
+mod settings;
+
 /// What the UI needs to render one plugin card. Everything here comes from
 /// `plugin.json`; the shell has no per-protocol knowledge.
 #[derive(Debug, Serialize)]
@@ -222,6 +224,17 @@ fn action(
         .map_err(|e| e.to_string())
 }
 
+/// Settings for one plugin, or `null` when nothing was saved yet.
+#[tauri::command]
+fn load_settings(id: String) -> Value {
+    settings::get(&id)
+}
+
+#[tauri::command]
+fn save_settings(id: String, values: Value) -> Result<(), String> {
+    settings::set(&id, values)
+}
+
 /// Drain pending plugin notifications (session state, logs, ...).
 #[tauri::command]
 fn poll_events(id: String, state: tauri::State<'_, AppState>) -> Vec<PluginMessage> {
@@ -408,7 +421,9 @@ pub fn run() {
             discover,
             connect,
             action,
-            poll_events
+            poll_events,
+            load_settings,
+            save_settings
         ])
         .setup(|app| {
             build_tray(app)?;
