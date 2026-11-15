@@ -16,7 +16,7 @@ pub mod manifest;
 pub mod window;
 
 pub use host::{PluginEvent, PluginHost};
-pub use manifest::{PanelItem, PluginManifest};
+pub use manifest::{Capability, PanelItem, PluginManifest};
 pub use window::{Rect, WindowSpec};
 
 /// Version of the plugin contract implemented by this crate.

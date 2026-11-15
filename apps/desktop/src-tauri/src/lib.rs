@@ -25,7 +25,7 @@ struct AppState {
 /// next to the executable.
 fn plugins_dir() -> PathBuf {
     if cfg!(debug_assertions) {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../plugins")
     } else {
         std::env::current_exe()
             .ok()

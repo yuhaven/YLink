@@ -32,14 +32,29 @@ docs/plugin-api.md    # 插件契约（先读这个）
 需要 Rust（MSVC 工具链）、Node 20+、VS Build Tools（C++ 桌面开发）。
 
 ```powershell
-# 核心单测
+# 核心单测（9 个，含一次真实进程的 JSON-RPC 往返）
 cargo test -p castpane-core
 
-# 桌面应用（阶段二接入）
+# 桌面应用
 cd apps/desktop
 npm install
 npm run tauri dev
 ```
+
+国内网络提示：`crates.io` 建议走镜像（`~/.cargo/config.toml` 里配 `sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/`），否则首次拉 400+ crate 会很慢。
+
+## 获取引擎
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\fetch-engines.ps1 -Only android
+```
+
+脚本按**固定版本 + SHA-256** 下载 scrcpy v5.0.1 与 uxplay-windows 2.0.0.1736，解压到 `plugins/*/bin/`（该目录不入库）。
+
+如果 GitHub 直连被阻断（部分网络下 `github.com` release 下载会失败，`raw.githubusercontent.com` 正常），手动下载同名 zip 后解压到对应目录即可：
+
+- scrcpy → `plugins/android/bin/scrcpy/`（需要 `scrcpy.exe`、`adb.exe`、`scrcpy-server`）
+- uxplay-windows → `plugins/airplay/bin/uxplay/`
 
 ## 设计文档
 
