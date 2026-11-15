@@ -283,6 +283,88 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Headless self-check used by `CastPane.exe --diagnose` and by CI.
+///
+/// Starts every available plugin, asks it to diagnose itself, prints the
+/// result and returns a process exit code (0 = everything passed).
+/// Deliberately does not touch the GUI, so it is safe to run in a terminal
+/// while the app (or a game) is running.
+pub fn headless_diagnose() -> i32 {
+    let plugins = load_plugins();
+    println!(
+        "CastPane diagnose — {} plugin(s) from {}",
+        plugins.len(),
+        plugins_dir().display()
+    );
+    if plugins.is_empty() {
+        eprintln!("no plugins found");
+        return 2;
+    }
+
+    let mut failures = 0usize;
+
+    for mut host in plugins {
+        let id = host.manifest().id.clone();
+        let name = host.manifest().name.clone();
+        let version = host.manifest().version.clone();
+        let entry = host.manifest().entry_path();
+
+        println!("\n[{id}] {name} v{version}");
+        if !entry.exists() {
+            println!("  ! 未安装：{}", entry.display());
+            println!("    → powershell -File scripts/package-plugin.ps1 -Plugin {id}");
+            failures += 1;
+            continue;
+        }
+
+        if let Err(err) = host.start() {
+            println!("  ✗ 启动失败：{err}");
+            failures += 1;
+            continue;
+        }
+
+        match host.call("diagnose", json!({})) {
+            Ok(value) => {
+                let checks = value
+                    .get("checks")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                if checks.is_empty() {
+                    println!("  · 插件没有返回检查项");
+                }
+                for check in checks {
+                    let ok = check.get("ok").and_then(Value::as_bool).unwrap_or(false);
+                    let check_name = check.get("name").and_then(Value::as_str).unwrap_or("?");
+                    let detail = check.get("detail").and_then(Value::as_str).unwrap_or("");
+                    let hint = check.get("hint").and_then(Value::as_str);
+                    println!(
+                        "  {} {check_name}: {detail}{}",
+                        if ok { "✓" } else { "✗" },
+                        hint.map(|h| format!("  → {h}")).unwrap_or_default()
+                    );
+                    if !ok {
+                        failures += 1;
+                    }
+                }
+            }
+            Err(err) => {
+                println!("  ✗ diagnose 失败：{err}");
+                failures += 1;
+            }
+        }
+
+        host.stop();
+    }
+
+    println!("\n{failures} 个问题");
+    if failures == 0 {
+        0
+    } else {
+        1
+    }
+}
+
 pub fn run() {
     let plugins = load_plugins();
     eprintln!(

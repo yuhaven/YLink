@@ -33,6 +33,22 @@ docs/plugin-api.md    # 插件契约（先读这个）
 - 关闭窗口 = 隐藏到托盘，进程继续在后台；真正退出走托盘菜单「退出」
 - 左键点托盘图标恢复窗口
 - 重复启动不会开第二个窗口，只会把已有窗口叫到前台
+- `CastPane.exe --diagnose`：**无窗口自检**，逐个插件跑诊断并打印结果，退出码 0 表示全部通过
+
+`--diagnose` 示例：
+
+```
+CastPane diagnose — 2 plugin(s) from ...\plugins
+
+[airplay] AirPlay v0.1.0
+  ✗ uxplay: ...\plugins\airplay\bin\uxplay  → 运行 scripts/fetch-engines.ps1 -Only airplay
+
+[android] Android v0.1.0
+  ✗ scrcpy: ...\scrcpy.exe  → 运行 scripts/fetch-engines.ps1
+  ✗ adb: ...\adb.exe  → adb 随 scrcpy 一起发布
+
+3 个问题
+```
 
 ## 开发
 
