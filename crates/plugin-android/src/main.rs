@@ -236,7 +236,7 @@ fn config() -> &'static Mutex<Option<Config>> {
 
 /// Spawn the engine for a config and wire up waiter, overlay and pinning.
 fn launch(cfg: &Config) -> Result<String, String> {
-    let (scrcpy_path, _adb_path) = engine_paths();
+    let (scrcpy_path, adb_path) = engine_paths();
     let settings = cfg.settings.clone();
     let mut window = cfg.window.clone();
 
@@ -271,6 +271,8 @@ fn launch(cfg: &Config) -> Result<String, String> {
 
     spawn_waiter(sid.clone(), child);
 
+    set_brightness(&adb_path, &cfg.device_id, settings.brightness);
+
     #[cfg(windows)]
     {
         overlay::attach(pid, &cfg.device_id);
@@ -293,6 +295,26 @@ fn launch(cfg: &Config) -> Result<String, String> {
     Ok(sid)
 }
 
+
+/// Set the phone's screen brightness (0 leaves it alone). `adb shell` holds
+/// WRITE_SETTINGS, so this works without touching the phone's UI.
+fn set_brightness(adb: &std::path::Path, serial: &str, percent: u32) {
+    if percent == 0 {
+        return;
+    }
+    let raw = (percent.min(100) * 255 / 100).to_string();
+    for (key, value) in [("screen_brightness_mode", "0"), ("screen_brightness", raw.as_str())] {
+        let mut command = std::process::Command::new(adb);
+        command.args(["-s", serial, "shell", "settings", "put", "system", key, value]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let _ = command.output();
+    }
+}
+
 /// Switch capture orientation and restart the engine: scrcpy cannot rotate a
 /// running session when the app on the phone is locked to one orientation.
 /// Apply settings to a running session: window-level flags live, anything
@@ -310,6 +332,18 @@ fn apply_settings(id: Value, params: Value) {
 
     if cfg.settings == new_settings {
         reply(id, json!({"ok": true, "applied": "noop"}));
+        return;
+    }
+
+    // Brightness is applied directly on the phone: no restart needed.
+    let mut probe = new_settings.clone();
+    probe.brightness = cfg.settings.brightness;
+    if probe == cfg.settings {
+        cfg.settings.brightness = new_settings.brightness;
+        let (_, adb_path) = engine_paths();
+        set_brightness(&adb_path, &cfg.device_id, new_settings.brightness);
+        *config().lock().unwrap() = Some(cfg);
+        reply(id, json!({"ok": true, "applied": "live"}));
         return;
     }
 

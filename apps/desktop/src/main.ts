@@ -154,6 +154,11 @@ function renderControl(
       input.addEventListener("input", () => {
         values[item.key!] = Number(input.value);
       });
+      // `input` fires while dragging; only commit and apply on release.
+      input.addEventListener("change", () => {
+        values[item.key!] = Number(input.value);
+        onChange(item.key!);
+      });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), input);
       return row;
     }

@@ -41,6 +41,9 @@ pub struct Settings {
     /// Pin the window position (dragging snaps back). Off by default.
     #[serde(default)]
     pub lock_position: bool,
+    /// 0..100 screen brightness; 0 leaves the phone untouched.
+    #[serde(default)]
+    pub brightness: u32,
 }
 
 impl Default for Settings {
@@ -53,6 +56,7 @@ impl Default for Settings {
             lock_orientation: true,
             orientation: default_orientation(),
             lock_position: false,
+            brightness: 0,
         }
     }
 }

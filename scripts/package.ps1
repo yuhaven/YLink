@@ -84,6 +84,10 @@ try {
     Copy-Item (Join-Path $RepoRoot 'LICENSE') $dist
     Copy-Item (Join-Path $RepoRoot 'README.md') $dist
 
+    # Never ship a settings.json: it carries whatever the last test wrote
+    # (a stale lockPosition=true made the cast window snap back when dragged).
+    Remove-Item (Join-Path $dist 'settings.json') -ErrorAction SilentlyContinue
+
     $zip = Join-Path $RepoRoot "dist/CastPane-v$version-win64.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$dist/*" -DestinationPath $zip -CompressionLevel Optimal

@@ -57,6 +57,11 @@
         "type": "boolean",
         "default": false,
         "title": "固定窗口位置"
+      },
+      "brightness": {
+        "type": "number",
+        "default": 0,
+        "title": "?????0=????"
       }
     }
   },
@@ -84,6 +89,14 @@
       "type": "switch",
       "key": "stayAwake",
       "label": "投屏时保持亮屏"
+    },
+    {
+      "type": "slider",
+      "key": "brightness",
+      "label": "?????0=????",
+      "min": 0,
+      "max": 100,
+      "step": 5
     },
     {
       "type": "slider",
