@@ -14,7 +14,8 @@ pub struct PluginInfo {
     pub version: String,
     pub description: String,
     pub capabilities: Vec<Capability>,
-    pub settings: Value,
+    /// JSON Schema for the plugin's settings (defaults, enums, ranges).
+    pub schema: Value,
     pub panel: Vec<PanelItem>,
     pub running: bool,
 }
@@ -88,7 +89,7 @@ fn list_plugins(state: tauri::State<'_, AppState>) -> Vec<PluginInfo> {
                 version: m.version.clone(),
                 description: m.description.clone(),
                 capabilities: m.capabilities.clone(),
-                settings: m.settings.clone(),
+                schema: m.settings.clone(),
                 panel: m.panel.clone(),
                 running: host.is_running(),
             }
@@ -147,6 +148,7 @@ fn discover(id: String, state: tauri::State<'_, AppState>) -> Result<Vec<DeviceI
 fn connect(
     id: String,
     device_id: String,
+    settings: Option<Value>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<Value, String> {
@@ -186,7 +188,11 @@ fn connect(
 
     host.call(
         "session.start",
-        json!({ "deviceId": device_id, "window": window }),
+        json!({
+            "deviceId": device_id,
+            "window": window,
+            "settings": settings.unwrap_or_else(|| json!({})),
+        }),
     )
     .map_err(|e| e.to_string())
 }

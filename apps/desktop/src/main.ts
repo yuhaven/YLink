@@ -12,13 +12,21 @@ interface PanelItem {
   step?: number;
 }
 
+interface JsonSchema {
+  type?: string;
+  properties?: Record<
+    string,
+    { type?: string; default?: unknown; enum?: string[]; title?: string }
+  >;
+}
+
 interface PluginInfo {
   id: string;
   name: string;
   version: string;
   description: string;
   capabilities: string[];
-  settings: Record<string, unknown>;
+  schema: JsonSchema;
   panel: PanelItem[];
   running: boolean;
 }
@@ -52,8 +60,35 @@ function h<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** Manifest defaults, overlaid with whatever the user chose last time. */
+function loadValues(id: string, schema: JsonSchema): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const [key, prop] of Object.entries(schema.properties ?? {})) {
+    if (prop.default !== undefined) values[key] = prop.default;
+  }
+  try {
+    const raw = localStorage.getItem(`castpane.settings.${id}`);
+    if (raw) Object.assign(values, JSON.parse(raw));
+  } catch {
+    /* corrupt storage is not fatal */
+  }
+  return values;
+}
+
+function saveValues(id: string, values: Record<string, unknown>) {
+  try {
+    localStorage.setItem(`castpane.settings.${id}`, JSON.stringify(values));
+  } catch {
+    /* storage unavailable: settings last for this session only */
+  }
+}
+
 /** Render one declarative control. Unknown types are skipped, not fatal. */
-function renderControl(item: PanelItem, settings: Record<string, unknown>): HTMLElement | null {
+function renderControl(
+  item: PanelItem,
+  values: Record<string, unknown>,
+  schema: JsonSchema,
+): HTMLElement | null {
   switch (item.type) {
     case "text":
       return h("div", "hint", item.text ?? "");
@@ -63,9 +98,9 @@ function renderControl(item: PanelItem, settings: Record<string, unknown>): HTML
       const row = h("div", "row");
       const input = h("input");
       input.type = "checkbox";
-      input.checked = Boolean(settings[item.key!] ?? false);
+      input.checked = Boolean(values[item.key!] ?? false);
       input.addEventListener("change", () => {
-        settings[item.key!] = input.checked;
+        values[item.key!] = input.checked;
       });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), input);
       return row;
@@ -77,9 +112,9 @@ function renderControl(item: PanelItem, settings: Record<string, unknown>): HTML
       input.min = String(item.min ?? 0);
       input.max = String(item.max ?? 100);
       input.step = String(item.step ?? 1);
-      input.value = String(settings[item.key!] ?? item.min ?? 0);
+      input.value = String(values[item.key!] ?? item.min ?? 0);
       input.addEventListener("input", () => {
-        settings[item.key!] = Number(input.value);
+        values[item.key!] = Number(input.value);
       });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), input);
       return row;
@@ -87,16 +122,15 @@ function renderControl(item: PanelItem, settings: Record<string, unknown>): HTML
     case "select": {
       const row = h("div", "row");
       const select = h("select");
-      const schema = (settings as any)?.__schema?.[item.key!];
-      const options: string[] = schema?.enum ?? [];
+      const options = schema.properties?.[item.key!]?.enum ?? [];
       for (const opt of options) {
         const o = h("option", undefined, opt);
         o.value = opt;
-        if (settings[item.key!] === opt) o.selected = true;
+        if (values[item.key!] === opt) o.selected = true;
         select.append(o);
       }
       select.addEventListener("change", () => {
-        settings[item.key!] = select.value;
+        values[item.key!] = select.value;
       });
       row.append(h("label", undefined, item.label ?? item.key ?? ""), select);
       return row;
@@ -114,7 +148,7 @@ function renderControl(item: PanelItem, settings: Record<string, unknown>): HTML
   }
 }
 
-/** Poll session events for a while so the user sees state changes. */
+/** Poll session events for a while so state changes become visible. */
 function watch(pluginId: string, ticks = 12) {
   let left = ticks;
   const timer = window.setInterval(async () => {
@@ -123,8 +157,7 @@ function watch(pluginId: string, ticks = 12) {
       const messages = await invoke<PluginMessage[]>("poll_events", { id: pluginId });
       for (const msg of messages) {
         if (msg.method === "session.state") {
-          const state = msg.params.state as string;
-          setStatus(`会话：${state}`);
+          setStatus(`会话：${msg.params.state as string}`);
         }
         if (msg.method === "log") {
           console.info("[plugin]", msg.params.message);
@@ -137,7 +170,11 @@ function watch(pluginId: string, ticks = 12) {
   }, 500);
 }
 
-function renderDevices(plugin: PluginInfo, container: HTMLElement) {
+function renderDevices(
+  plugin: PluginInfo,
+  container: HTMLElement,
+  values: Record<string, unknown>,
+) {
   const scan = h("button", undefined, "扫描设备");
   const list = h("div", "devices");
 
@@ -162,7 +199,11 @@ function renderDevices(plugin: PluginInfo, container: HTMLElement) {
         cast.addEventListener("click", async () => {
           cast.disabled = true;
           try {
-            await invoke("connect", { id: plugin.id, deviceId: device.id });
+            await invoke("connect", {
+              id: plugin.id,
+              deviceId: device.id,
+              settings: values,
+            });
             setStatus(`${device.name} 正在投屏`);
             watch(plugin.id);
           } catch (err) {
@@ -193,13 +234,17 @@ function renderCard(plugin: PluginInfo) {
   );
 
   const body = h("div", "card-body");
+  const values = loadValues(plugin.id, plugin.schema);
   for (const item of plugin.panel ?? []) {
-    const node = renderControl(item, plugin.settings);
+    const node = renderControl(item, values, plugin.schema);
     if (node) body.append(node);
   }
+  // Delegated listeners: every control persists without wiring each one.
+  body.addEventListener("change", () => saveValues(plugin.id, values));
+  body.addEventListener("input", () => saveValues(plugin.id, values));
 
   const devices = h("div", "card-devices");
-  renderDevices(plugin, devices);
+  renderDevices(plugin, devices, values);
 
   card.append(head, h("div", "card-desc", plugin.description), body, devices);
   app.append(card);

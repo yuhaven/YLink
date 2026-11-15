@@ -164,4 +164,51 @@ mod tests {
         let joined = build_args("dev", "t", &Settings::default(), None).join(" ");
         assert!(!joined.contains("--window-x"));
     }
+
+    #[test]
+    fn deserializes_camel_case_settings_from_the_host() {
+        let raw = serde_json::json!({
+            "maxSize": 720,
+            "maxFps": 30,
+            "audio": false,
+            "stayAwake": false
+        });
+        let settings: Settings = serde_json::from_value(raw).expect("settings");
+        assert_eq!(settings.max_size, 720);
+        assert_eq!(settings.max_fps, 30);
+        assert!(!settings.audio);
+        assert!(!settings.stay_awake);
+    }
+
+    #[test]
+    fn empty_settings_fall_back_to_defaults() {
+        let settings: Settings = serde_json::from_value(serde_json::json!({})).expect("settings");
+        assert_eq!(settings.max_size, Settings::default().max_size);
+        assert!(settings.audio);
+    }
+
+    /// The manifest is the contract the UI renders; the code must agree with
+    /// its defaults, otherwise the panel lies about what will happen.
+    #[test]
+    fn manifest_defaults_agree_with_code() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../plugins/android/plugin.json");
+        let raw = std::fs::read_to_string(&path).expect("read plugin.json");
+        let manifest: serde_json::Value = serde_json::from_str(&raw).expect("parse plugin.json");
+        let props = &manifest["settings"]["properties"];
+
+        let from_manifest = serde_json::json!({
+            "maxSize": props["maxSize"]["default"],
+            "maxFps": props["maxFps"]["default"],
+            "audio": props["audio"]["default"],
+            "stayAwake": props["stayAwake"]["default"],
+        });
+        let settings: Settings = serde_json::from_value(from_manifest).expect("settings");
+
+        let defaults = Settings::default();
+        assert_eq!(settings.max_size, defaults.max_size);
+        assert_eq!(settings.max_fps, defaults.max_fps);
+        assert_eq!(settings.audio, defaults.audio);
+        assert_eq!(settings.stay_awake, defaults.stay_awake);
+    }
 }
