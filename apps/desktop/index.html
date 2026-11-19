@@ -8,12 +8,207 @@
   <body>
     <div id="app">
       <header class="topbar">
-        <span class="brand">CastPane</span>
-        <span id="status" class="status">就绪</span>
+        <div class="brand">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 10.5a12 12 0 0 1 16 0M7 14a8 8 0 0 1 10 0M10 17.4a3.4 3.4 0 0 1 4 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <circle cx="12" cy="20" r="1.3" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="brand-name">CastPane</span>
+        </div>
+        <div class="top-actions">
+          <span id="version" class="version"></span>
+          <button id="more-toggle" class="more-button" type="button" aria-label="更多设置">
+            更多
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
       </header>
-      <main id="plugins" class="plugins">
-        <p class="empty">正在加载插件…</p>
+
+      <main id="home" class="home">
+        <section class="devices-section" aria-labelledby="devices-title">
+          <div class="section-head">
+            <h2 id="devices-title">设备</h2>
+            <span id="network-pill" class="pill"><i></i><span id="network-text">同一 Wi-Fi</span></span>
+          </div>
+          <div id="device-list" class="device-list" aria-live="polite">
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+          </div>
+          <button id="primary-action" class="primary" type="button" disabled>正在检测…</button>
+        </section>
+
+        <div id="status-line" class="status-line" role="status" aria-live="polite">
+          <span id="status-dot" class="status-dot busy"></span>
+          <span id="status-text" class="status-text">正在同一 Wi-Fi 中查找手机…</span>
+          <button id="files-button" class="files-entry" type="button" hidden aria-label="打开文件互传">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7.5A1.5 1.5 0 0 1 5.5 6H9l2 2h7.5A1.5 1.5 0 0 1 20 9.5v8A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+            </svg>
+            文件
+          </button>
+        </div>
       </main>
+
+      <span id="state-probe" class="sr-only" aria-live="polite">state=starting</span>
+      <span id="page-probe" class="sr-only" aria-live="polite">page=home</span>
+      <span id="transfer-probe" class="sr-only" aria-live="polite">transfer=idle</span>
+
+      <!-- iPad / AirPlay page -->
+      <section id="airplay-page" class="page" aria-hidden="true" hidden>
+        <header class="page-bar">
+          <button id="airplay-back" class="icon-button" type="button" aria-label="返回设备列表">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-heading">
+            <div class="eyebrow">AirPlay · 同一 Wi-Fi</div>
+            <h2>iPad 投屏</h2>
+          </div>
+          <span id="airplay-pill" class="pill"><i></i><span id="airplay-pill-text">未启动</span></span>
+        </header>
+        <div class="page-body">
+          <div class="hero">
+            <div class="hero-art">
+              <span class="hero-halo"></span>
+              <svg viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="4.5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8 20h8M12 16.5V20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M12 13.2a3.4 3.4 0 0 1 3.4 3.3M12 10.4a6.2 6.2 0 0 1 6.2 6.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3 id="airplay-title">在 iPad 上选择 CastPane</h3>
+            <p id="airplay-sub">启动接收端后，iPad 控制中心会出现它。</p>
+            <div id="airplay-state" class="waiting-pill"><span class="status-dot"></span>未启动</div>
+          </div>
+
+          <div class="info-card">
+            <div class="info-row"><span>接收端名称</span><b id="airplay-name">CastPane</b></div>
+            <div class="info-row"><span>电脑地址</span><b id="airplay-ip">同一 Wi-Fi</b></div>
+          </div>
+
+          <ol class="steps-card">
+            <li class="step"><span class="num">1</span><div><b>确认同一 Wi-Fi</b><small>iPad 与电脑连同一个网络，别用访客 Wi-Fi。</small></div></li>
+            <li class="step"><span class="num">2</span><div><b>打开控制中心</b><small>iPad 右上角向下滑，点「屏幕镜像」。</small></div></li>
+            <li class="step"><span class="num">3</span><div><b>选择接收端</b><small>在列表里点 <b id="airplay-step-name">CastPane</b>，画面会出现在独立窗口。</small></div></li>
+          </ol>
+
+          <div id="airplay-error" class="error-card" hidden></div>
+          <div class="page-actions">
+            <button id="airplay-primary" class="primary" type="button">启动接收端</button>
+            <button id="airplay-diagnose" class="ghost-button" type="button">检查接收端</button>
+            <button id="airplay-install" class="ghost-button" type="button" hidden>安装接收组件</button>
+          </div>
+          <div id="airplay-checks" class="checks"></div>
+          <p class="footnote">关闭画面窗口不会停止接收端；要彻底停止请点上面的按钮。首次连接若弹出 Windows 防火墙，请允许「专用网络」。</p>
+        </div>
+      </section>
+
+      <!-- Phone <-> PC files page -->
+      <section id="files-page" class="page" aria-hidden="true" hidden>
+        <header class="page-bar">
+          <button id="files-back" class="icon-button" type="button" aria-label="返回设备列表">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="page-heading">
+            <div class="eyebrow">文件互传 · 不中断投屏</div>
+            <h2>文件互传</h2>
+          </div>
+          <button id="files-refresh" class="icon-button" type="button" aria-label="刷新手机目录">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M20 11a8 8 0 1 0-1.8 7.1M20 5v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </header>
+        <div class="page-body files-body">
+          <div class="files-device-line">
+            <span id="files-device" class="files-device-name">已连接手机</span>
+            <span class="pill ok"><i></i>无线</span>
+          </div>
+          <nav id="files-path" class="files-path" aria-label="手机路径"></nav>
+          <div class="files-quick" aria-label="常用文件夹">
+            <button id="quick-transfer" class="quick-chip" type="button" data-path="/sdcard/Download/CastPane">互传文件夹</button>
+            <button id="quick-download" class="quick-chip" type="button" data-path="/sdcard/Download">下载</button>
+            <button id="quick-dcim" class="quick-chip" type="button" data-path="/sdcard/DCIM">照片</button>
+            <button id="quick-pictures" class="quick-chip" type="button" data-path="/sdcard/Pictures">图片</button>
+            <button id="quick-documents" class="quick-chip" type="button" data-path="/sdcard/Documents">文档</button>
+          </div>
+          <div class="files-toolbar">
+            <button id="files-send" class="primary compact" type="button">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              发送到手机
+            </button>
+            <button id="files-download" class="ghost-button compact" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              下载到电脑
+            </button>
+          </div>
+          <div id="files-drop" class="files-drop">
+            <div id="files-list" class="files-list" aria-live="polite">
+              <div class="files-loading"><span class="spinner"></span>正在读取手机目录…</div>
+            </div>
+            <div id="files-drop-hint" class="files-drop-hint" hidden>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <b>把文件或文件夹拖到这里</b>
+              <small>会发送到当前手机目录；也可以点「发送到手机」。</small>
+            </div>
+          </div>
+          <div id="transfer-card" class="transfer-card" hidden>
+            <div class="transfer-head">
+              <span id="transfer-direction" class="transfer-tag">接收</span>
+              <b id="transfer-name">文件</b>
+              <span id="transfer-percent" class="transfer-percent">0%</span>
+            </div>
+            <div class="progress-track"><span id="transfer-bar"></span></div>
+            <div class="transfer-meta">
+              <span id="transfer-bytes">0 B / 0 B</span>
+              <span id="transfer-speed"></span>
+            </div>
+            <div id="transfer-result" class="transfer-result" hidden></div>
+            <div id="transfer-actions" class="transfer-actions"></div>
+          </div>
+          <div id="transfer-history" class="transfer-history" hidden></div>
+          <p id="files-note" class="footnote">手机路径 /sdcard；电脑下载目录 %USERPROFILE%\Downloads\CastPane。</p>
+        </div>
+      </section>
+
+      <div id="overlay" class="overlay" hidden></div>
+
+      <aside id="more" class="drawer" aria-label="更多设置" aria-hidden="true">
+        <div class="drawer-head">
+          <div>
+            <div class="eyebrow">连接 · 画面 · 诊断</div>
+            <h2>更多</h2>
+          </div>
+          <button id="close-more" class="icon-button" type="button" aria-label="关闭更多设置">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
+        </div>
+        <div id="more-body" class="drawer-body"></div>
+      </aside>
+
+      <div id="progress" class="progress-layer" hidden>
+        <div class="progress-card">
+          <div class="progress-illustration" aria-hidden="true">
+            <span class="pulse-ring"></span>
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="7" y="2.6" width="10" height="18.8" rx="2.4" stroke="currentColor" stroke-width="1.6" />
+              <path d="M10.6 18.6h2.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </div>
+          <h2 id="progress-title">正在开启无线</h2>
+          <p id="progress-message" class="progress-message">用数据线开通一次，之后同一 Wi-Fi 无需插线。</p>
+          <ol id="progress-steps" class="progress-steps">
+            <li data-step="1"><span class="step-dot"></span>读取手机 Wi-Fi 地址</li>
+            <li data-step="2"><span class="step-dot"></span>开启 5555 无线端口</li>
+            <li data-step="3"><span class="step-dot"></span>连接并启动画面</li>
+          </ol>
+          <div id="progress-error" class="progress-error" hidden></div>
+          <div id="progress-actions" class="progress-actions"></div>
+        </div>
+      </div>
+
+      <div id="toast" class="toast" hidden></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

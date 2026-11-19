@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "castpane"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "castpane-core",
  "serde",
@@ -450,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "castpane-plugin-airplay"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde_json",
  "windows-sys 0.59.0",
@@ -458,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "castpane-plugin-android"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",

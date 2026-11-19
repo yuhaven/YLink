@@ -48,6 +48,18 @@ $Engines = @{
         Sha256   = '9D3A51C15FC9DB857351195E7EB7BBB21700D9AE25D936A54BCF8536B62CCA18'
         Dest     = 'plugins/airplay/bin/uxplay'
     }
+    # The published uxplay-windows zip is missing the GStreamer plugin scanner,
+    # so the bundled H.264/D3D11 plugins never load and the receiver can
+    # advertise but cannot show a picture. Pull the matching 1.28.1 scanner
+    # from MSYS2; the MSYS2 package hash and the extracted file hash are pinned.
+    gst_scanner = @{
+        Label          = 'gstreamer-scanner'
+        Version        = '1.28.1-1'
+        Url            = 'https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-gstreamer-1.28.1-1-any.pkg.tar.zst'
+        Sha256         = 'E26993993966C35AE5CF586C56AA7DD383175318F5E72795E02AB461D49A49C2'
+        ScannerSha256  = '00F8A2A2E0C26B621F0693EC891036FD41C1A031B1D6657A43E2405B02F2BB2D'
+        Dest           = 'plugins/airplay/bin/uxplay/libexec/gstreamer-1.0'
+    }
 }
 
 function Get-RemoteFile {
@@ -107,8 +119,53 @@ function Install-Engine {
     }
 }
 
+function Install-GstScanner {
+    param([hashtable]$Spec)
+
+    Write-Host "==> $($Spec.Label) $($Spec.Version)"
+    $dest = Join-Path $RepoRoot $Spec.Dest
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ("castpane-" + [guid]::NewGuid().ToString('N') + ".pkg.tar.zst")
+    $extract = Join-Path ([IO.Path]::GetTempPath()) ("castpane-gst-" + [guid]::NewGuid().ToString('N'))
+
+    try {
+        Get-RemoteFile -Url $Spec.Url -OutFile $tmp
+        $actual = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash
+        if ($actual -ne $Spec.Sha256) {
+            throw "sha256 mismatch for $($Spec.Label): expected $($Spec.Sha256), got $actual"
+        }
+        Write-Host "    digest ok"
+
+        $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+        if (-not $tar) {
+            throw "tar.exe not found; Windows 10 1803+ includes it. Install the scanner manually from $($Spec.Url): ucrt64/libexec/gstreamer-1.0/gst-plugin-scanner.exe -> $dest"
+        }
+
+        New-Item -ItemType Directory -Path $extract -Force | Out-Null
+        & $tar.Source -xf $tmp -C $extract "ucrt64/libexec/gstreamer-1.0/gst-plugin-scanner.exe"
+        if ($LASTEXITCODE -ne 0) { throw "tar failed with $LASTEXITCODE" }
+
+        $src = Join-Path $extract "ucrt64/libexec/gstreamer-1.0/gst-plugin-scanner.exe"
+        if (-not (Test-Path $src)) { throw "scanner not found inside the package" }
+        $scannerHash = (Get-FileHash -Path $src -Algorithm SHA256).Hash
+        if ($scannerHash -ne $Spec.ScannerSha256) {
+            throw "sha256 mismatch for gst-plugin-scanner.exe: expected $($Spec.ScannerSha256), got $scannerHash"
+        }
+
+        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        Copy-Item $src (Join-Path $dest 'gst-plugin-scanner.exe') -Force
+        Write-Host "    installed -> $(Join-Path $dest 'gst-plugin-scanner.exe')"
+    }
+    finally {
+        if (Test-Path $tmp) { Remove-Item $tmp -Force }
+        if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+    }
+}
+
 if ($Only -in @('all', 'android')) { Install-Engine -Spec $Engines.scrcpy }
-if ($Only -in @('all', 'airplay')) { Install-Engine -Spec $Engines.uxplay }
+if ($Only -in @('all', 'airplay')) {
+    Install-Engine -Spec $Engines.uxplay
+    Install-GstScanner -Spec $Engines.gst_scanner
+}
 
 Write-Host ''
 Write-Host 'Done. Engines live in plugins/*/bin/ (git-ignored).'

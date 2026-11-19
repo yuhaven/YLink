@@ -308,8 +308,15 @@ async fn apply_settings(
 }
 
 /// Invoke a declarative panel action (`action.<name>`) on a plugin.
+/// `params` is passed through untouched so plugins can implement multi-step
+/// flows (for example a pairing code) without teaching the core their names.
 #[tauri::command]
-async fn action(id: String, name: String, app: tauri::AppHandle) -> Result<Value, String> {
+async fn action(
+    id: String,
+    name: String,
+    params: Option<Value>,
+    app: tauri::AppHandle,
+) -> Result<Value, String> {
     blocking(app, move |state| {
         let mut plugins = lock_plugins(state);
         let host = plugins
@@ -321,10 +328,81 @@ async fn action(id: String, name: String, app: tauri::AppHandle) -> Result<Value
             host.start().map_err(|e| e.to_string())?;
         }
 
-        host.call(&format!("action.{name}"), json!({}))
+        host.call(&format!("action.{name}"), params.unwrap_or_else(|| json!({})))
             .map_err(|e| e.to_string())
     })
     .await
+}
+
+/// Native multi-file picker for "send to phone".
+///
+/// Tauri's file input does not expose absolute paths on Windows, and a browser
+/// `<input type=file>` would only give a sandboxed File. `GetOpenFileNameW` is
+/// the OS picker the user already knows, and it returns absolute paths that the
+/// Android plugin can hand to `adb push`.
+#[cfg(windows)]
+#[tauri::command]
+async fn pick_files() -> Result<Vec<String>, String> {
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetOpenFileNameW, OFN_ALLOWMULTISELECT, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR,
+        OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let filter = wide("所有文件 (*.*)\0*.*\0\0");
+        let title = wide("选择要发送到手机的文件");
+        let mut buffer = vec![0u16; 128 * 1024];
+        let mut ofn: OPENFILENAMEW = unsafe { std::mem::zeroed() };
+        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        ofn.lpstrFilter = filter.as_ptr();
+        ofn.lpstrFile = buffer.as_mut_ptr();
+        ofn.nMaxFile = buffer.len() as u32;
+        ofn.lpstrTitle = title.as_ptr();
+        ofn.Flags = OFN_ALLOWMULTISELECT
+            | OFN_EXPLORER
+            | OFN_FILEMUSTEXIST
+            | OFN_PATHMUSTEXIST
+            | OFN_NOCHANGEDIR;
+
+        let ok = unsafe { GetOpenFileNameW(&mut ofn) };
+        if ok == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Multi-select returns: directory\0name1\0name2\0\0
+        let parts: Vec<&[u16]> = buffer
+            .split(|&unit| unit == 0)
+            .filter(|part| !part.is_empty())
+            .collect();
+        let Some(first) = parts.first() else {
+            return Ok(Vec::new());
+        };
+        let first = String::from_utf16_lossy(first);
+        if parts.len() == 1 {
+            return Ok(vec![first]);
+        }
+        Ok(parts[1..]
+            .iter()
+            .map(|name| {
+                std::path::Path::new(&first)
+                    .join(String::from_utf16_lossy(name))
+                    .display()
+                    .to_string()
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("文件选择失败：{e}"))?
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+async fn pick_files() -> Result<Vec<String>, String> {
+    Err("文件选择框目前只在 Windows 上实现".into())
 }
 
 /// Shown in the footer so it is obvious which build is running.
@@ -535,6 +613,7 @@ pub fn run() {
             poll_events,
             load_settings,
             save_settings,
+            pick_files,
             app_version
         ])
         .setup(|app| {

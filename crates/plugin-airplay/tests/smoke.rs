@@ -104,8 +104,12 @@ fn answers_initialize_and_diagnose() {
 
     let diag = client.request(2, "action.diagnose", json!({}));
     let checks = diag["result"]["checks"].as_array().expect("checks");
-    assert_eq!(checks[0]["name"], "uxplay");
-    assert!(checks[0]["ok"].is_boolean());
+    let engine = checks
+        .iter()
+        .find(|c| c["name"] == "引擎")
+        .expect("engine check");
+    assert!(engine["ok"].is_boolean());
+    assert!(checks.iter().any(|c| c["name"] == "Bonjour 发现"));
 }
 
 #[test]
@@ -125,15 +129,19 @@ fn starts_and_stops_the_receiver_with_a_mock_engine() {
         .expect("sessionId")
         .to_string();
 
-    let events = client.drain(Duration::from_secs(3));
+    let events = client.drain(Duration::from_secs(4));
     let states: Vec<String> = events
         .iter()
         .filter(|e| e["method"] == "session.state")
         .filter_map(|e| e["params"]["state"].as_str().map(str::to_string))
         .collect();
     assert!(
-        states.iter().any(|s| s == "streaming"),
-        "expected streaming state, got {states:?}"
+        states.iter().any(|s| s == "waiting"),
+        "expected waiting state (no video window in the mock), got {states:?}"
+    );
+    assert!(
+        !states.iter().any(|s| s == "streaming"),
+        "mock engine creates no window, so streaming would be a lie: {states:?}"
     );
 
     let stopped = client.request(4, "session.stop", json!({"sessionId": session_id}));

@@ -1,6 +1,6 @@
 [package]
 name = "castpane-plugin-android"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "CastPane android plugin: ADB discovery + scrcpy launch"
@@ -17,6 +17,10 @@ path = "src/bin/mock_adb.rs"
 [[bin]]
 name = "mock-scrcpy"
 path = "src/bin/mock_scrcpy.rs"
+
+[[bin]]
+name = "mock-adb-usb"
+path = "src/bin/mock_adb_usb.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

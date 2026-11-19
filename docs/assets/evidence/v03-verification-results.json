@@ -1,0 +1,92 @@
+{
+  "version": "0.3.0",
+  "date": "2026-11-16",
+  "app": "dist/CastPane-v0.3.0-win64.zip",
+  "tests": {
+    "cargo_workspace": {
+      "exit": 0,
+      "passed": 60,
+      "failed": 0
+    },
+    "airplay_l3": {
+      "passed": true,
+      "state": "airplay-waiting",
+      "seconds_to_waiting": 3.61,
+      "mdns_name": "CastPane._airplay._tcp.local.",
+      "mdns_port": 52913,
+      "mdns_addresses": [
+        "192.168.101.6",
+        "fe80::6b05:e37b:c95f:9ccb",
+        "2408:8234:910:1af0:a9aa:a373:33d0:21b1",
+        "2408:8234:910:1af0:4515:853:eb0e:9890"
+      ],
+      "firewall_prompt_allowed": false,
+      "streaming_observed": false,
+      "note": "No iPad on this network; video-window/streaming path awaits real iPad.",
+      "seconds_to_stop": 0.85,
+      "mdns_after_stop": "gone",
+      "second_start_seconds": 3.93,
+      "second_stop_seconds": 1.01
+    },
+    "files_l3": {
+      "passed": true,
+      "push_seconds": 5.95,
+      "push_remote_path": "/sdcard/Download/CastPane/cp-e2e-20261116-202625-5483.bin",
+      "push_remote_size": 10485760,
+      "push_remote_sha256": "953d7572d3c1c7141ba20f2cdb477ae5559789b654e889b1cefa5caea8e6cbd2",
+      "pull_seconds": 2.18,
+      "pull_local_path": "C:\\Users\\MLTZ\\Downloads\\CastPane\\cp-e2e-20261116-202625-5483.bin",
+      "pull_local_size": 10485760,
+      "pull_local_sha256": "953D7572D3C1C7141BA20F2CDB477AE5559789B654E889B1CEFA5CAEA8E6CBD2",
+      "download_dir": "C:\\Users\\MLTZ\\Downloads\\CastPane",
+      "cast_still_alive": true,
+      "cast_window_after": {
+        "hwnd": 12848670,
+        "x": 2016,
+        "y": 160,
+        "w": 504,
+        "h": 1119,
+        "ratio": 0.45,
+        "caption": true,
+        "minimize_box": true,
+        "maximize_box": true,
+        "topmost": false
+      },
+      "second_open": true,
+      "permission_error": true,
+      "test_file": {
+        "name": "cp-e2e-20261116-202625-5483.bin",
+        "size": 10485760,
+        "sha256": "953D7572D3C1C7141BA20F2CDB477AE5559789B654E889B1CEFA5CAEA8E6CBD2"
+      },
+      "cast": {
+        "seconds_to_streaming": 2.79,
+        "window": {
+          "hwnd": 12848670,
+          "x": 2016,
+          "y": 160,
+          "w": 504,
+          "h": 1119,
+          "ratio": 0.45,
+          "caption": true,
+          "minimize_box": true,
+          "maximize_box": true,
+          "topmost": false
+        }
+      }
+    },
+    "wireless_real_l3": {
+      "passed": true,
+      "seconds_to_streaming": 2.52,
+      "seconds_to_window": 3.54
+    }
+  },
+  "ipad_present": false,
+  "airplay_picture_verified": false,
+  "known_issues": [
+    "Android API 31 audio forwarding unsupported",
+    "AirPlay iPad picture pending real device",
+    "gate.ps1 not implemented"
+  ],
+  "zip_sha256_file": "dist/CastPane-v0.3.0-win64.zip.sha256"
+}

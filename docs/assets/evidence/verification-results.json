@@ -1,0 +1,64 @@
+{
+  "generated": "2026-11-16T02:22:00+08:00",
+  "app": "dist/CastPane/CastPane.exe",
+  "version": "0.2.0",
+  "mock_ui_e2e": {
+    "mock-usb": {
+      "passed": true,
+      "state": "streaming",
+      "elapsed_seconds": 3.97,
+      "primary": "一键开启无线",
+      "screenshots": [
+        "docs/assets/evidence/usb-first-home.png",
+        "docs/assets/evidence/usb-first-streaming.png"
+      ]
+    },
+    "mock-empty": {
+      "passed": true,
+      "state": "not-found",
+      "primary": "检测手机",
+      "screenshots": ["docs/assets/evidence/empty-state.png"]
+    },
+    "mock-network": {
+      "passed": true,
+      "state": "error",
+      "primary": "重新检测",
+      "screenshots": ["docs/assets/evidence/network-error.png"]
+    },
+    "mock-reconnect": {
+      "passed": true,
+      "state": "ready",
+      "elapsed_seconds": 2.33,
+      "primary": "开始投屏",
+      "screenshots": [
+        "docs/assets/evidence/reconnect-home.png",
+        "docs/assets/evidence/reconnect-streaming.png"
+      ]
+    }
+  },
+  "real_wireless": {
+    "verified": true,
+    "adb_serial": "192.168.101.5:5555",
+    "session_start_to_window_seconds": 1.4,
+    "cast_window": {
+      "w": 504,
+      "h": 1119,
+      "ratio": 0.45,
+      "caption": true,
+      "minimize_box": true,
+      "maximize_box": true,
+      "topmost": false
+    },
+    "screenshot": "docs/assets/evidence/real-home-wireless.png"
+  },
+  "real_ui_usb_bootstrap": {
+    "verified": false,
+    "reason": "After adb usb, Windows no longer enumerated the phone; adb devices was empty. PRECONDITION FAILED (exit 2)."
+  },
+  "release": {
+    "zip": "dist/CastPane-v0.2.0-win64.zip",
+    "no_settings_json": true,
+    "no_test_artifacts": true,
+    "rollback_zip": "dist/CastPane-v0.1.0-win64.zip"
+  }
+}

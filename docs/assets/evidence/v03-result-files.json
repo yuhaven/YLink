@@ -1,0 +1,64 @@
+{
+    "scenario":  "files",
+    "app":  "D:\\dsh\\hongguo\\dist\\CastPane\\CastPane.exe",
+    "passed":  true,
+    "error":  null,
+    "airplay":  null,
+    "files":  {
+                  "push_seconds":  5.95,
+                  "push_remote_path":  "/sdcard/Download/CastPane/cp-e2e-20261116-202625-5483.bin",
+                  "push_remote_size":  10485760,
+                  "push_remote_sha256":  "953d7572d3c1c7141ba20f2cdb477ae5559789b654e889b1cefa5caea8e6cbd2",
+                  "pull_seconds":  2.18,
+                  "pull_local_path":  "C:\\Users\\MLTZ\\Downloads\\CastPane\\cp-e2e-20261116-202625-5483.bin",
+                  "pull_local_size":  10485760,
+                  "pull_local_sha256":  "953D7572D3C1C7141BA20F2CDB477AE5559789B654E889B1CEFA5CAEA8E6CBD2",
+                  "download_dir":  "C:\\Users\\MLTZ\\Downloads\\CastPane",
+                  "cast_still_alive":  true,
+                  "cast_window_after":  {
+                                            "hwnd":  12848670,
+                                            "x":  2016,
+                                            "y":  160,
+                                            "w":  504,
+                                            "h":  1119,
+                                            "ratio":  0.45,
+                                            "caption":  true,
+                                            "minimize_box":  true,
+                                            "maximize_box":  true,
+                                            "topmost":  false
+                                        },
+                  "second_open":  true,
+                  "permission_error":  true
+              },
+    "screenshots":  [
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\home-streaming.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-list.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-sent.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-download-root.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-received.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-permission.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\files-after-cast-close.png"
+                    ],
+    "started":  "2026-11-16T20:26:25",
+    "device":  "192.168.101.5:5555",
+    "test_file":  {
+                      "name":  "cp-e2e-20261116-202625-5483.bin",
+                      "size":  10485760,
+                      "sha256":  "953D7572D3C1C7141BA20F2CDB477AE5559789B654E889B1CEFA5CAEA8E6CBD2"
+                  },
+    "cast":  {
+                 "seconds_to_streaming":  2.79,
+                 "window":  {
+                                "hwnd":  12848670,
+                                "x":  2016,
+                                "y":  160,
+                                "w":  504,
+                                "h":  1119,
+                                "ratio":  0.45,
+                                "caption":  true,
+                                "minimize_box":  true,
+                                "maximize_box":  true,
+                                "topmost":  false
+                            }
+             }
+}

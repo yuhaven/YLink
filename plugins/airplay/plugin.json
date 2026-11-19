@@ -1,9 +1,9 @@
 {
   "id": "airplay",
   "name": "AirPlay",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "api": 0,
-  "description": "接收 iPhone / iPad 的屏幕镜像，基于 uxplay",
+  "description": "接收 iPad / iPhone 的屏幕镜像，基于 uxplay-windows",
   "platforms": ["windows"],
   "entry": "bin/airplay-plugin.exe",
   "capabilities": ["discover", "session", "window", "diagnose"],
@@ -13,7 +13,7 @@
       "receiverName": {
         "type": "string",
         "default": "CastPane",
-        "title": "显示名称"
+        "title": "接收端名称"
       },
       "renderer": {
         "type": "string",
@@ -24,7 +24,7 @@
       "fullscreen": {
         "type": "boolean",
         "default": false,
-        "title": "全屏显示"
+        "title": "画面全屏"
       },
       "lowLatency": {
         "type": "boolean",
@@ -34,11 +34,12 @@
     }
   },
   "panel": [
-    { "type": "text", "text": "在 iPhone / iPad 控制中心点「屏幕镜像」，选择下面的名称。" },
-    { "type": "switch", "key": "lowLatency", "label": "低延迟模式" },
-    { "type": "switch", "key": "fullscreen", "label": "全屏显示" },
+    { "type": "text", "text": "iPad 控制中心 → 屏幕镜像 → 选择接收端名称。首次使用需要 Bonjour 发现服务。" },
+    { "type": "switch", "key": "lowLatency", "label": "低延迟模式（60fps）" },
+    { "type": "switch", "key": "fullscreen", "label": "画面全屏" },
     { "type": "select", "key": "renderer", "label": "渲染器" },
     { "type": "divider" },
-    { "type": "button", "action": "diagnose", "label": "检查网络与端口" }
+    { "type": "button", "action": "diagnose", "label": "检查接收端与网络" },
+    { "type": "button", "action": "install_bonjour", "label": "安装 / 修复 Bonjour 组件" }
   ]
 }

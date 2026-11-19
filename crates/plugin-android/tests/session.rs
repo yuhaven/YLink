@@ -183,3 +183,205 @@ fn refuses_an_unauthorized_device_with_a_hint() {
     assert_eq!(response["error"]["code"], "E_PERMISSION");
     assert!(response["error"]["hint"].is_string());
 }
+
+fn local_phone_ip() -> String {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").expect("udp socket");
+    if socket.connect("8.8.8.8:80").is_err() {
+        return "192.168.1.50".into();
+    }
+    match socket.local_addr().ok().map(|a| a.ip()) {
+        Some(std::net::IpAddr::V4(ip)) => {
+            let o = ip.octets();
+            format!("{}.{}.{}.50", o[0], o[1], o[2])
+        }
+        _ => "192.168.1.50".into(),
+    }
+}
+
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "castpane-wireless-{tag}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn usb_bootstrap_switches_to_wifi_and_casts_over_the_network() {
+    let dir = temp_dir("bootstrap");
+    let state = dir.join("adb-state.txt");
+    let args_file = dir.join("scrcpy-args.txt");
+    let phone_ip = local_phone_ip();
+
+    let mut client = Client::spawn(&[
+        ("CASTPANE_ADB", bin("mock-adb-usb")),
+        ("CASTPANE_SCRCPY", bin("mock-scrcpy")),
+        ("CASTPANE_STATE_DIR", dir.display().to_string()),
+        ("MOCK_ADB_STATE_FILE", state.display().to_string()),
+        ("MOCK_USB_PHONE_IP", phone_ip.clone()),
+        ("MOCK_SCRCPY_ARGS_FILE", args_file.display().to_string()),
+        ("MOCK_ENGINE_SECONDS", "30".to_string()),
+    ]);
+    client.request(1, "initialize", json!({}));
+
+    let scan = client.request(2, "action.wireless_scan", json!({}));
+    assert_eq!(scan["result"]["state"], "usb");
+    assert!(
+        scan["result"]["status"]
+            .as_str()
+            .unwrap()
+            .contains("一键开启无线"),
+        "unexpected scan: {scan}"
+    );
+    assert_eq!(scan["result"]["devices"][0]["transport"], "usb");
+
+    let boot = client.request(3, "action.wireless_usb_bootstrap", json!({}));
+    assert_eq!(boot["result"]["ok"], true, "bootstrap failed: {boot}");
+    assert_eq!(
+        boot["result"]["device"]["endpoint"],
+        format!("{phone_ip}:5555")
+    );
+    assert!(
+        boot["result"]["status"].as_str().unwrap().contains("拔"),
+        "status should tell the user the cable can go: {boot}"
+    );
+
+    let scan = client.request(4, "action.wireless_scan", json!({}));
+    assert_eq!(scan["result"]["state"], "ready");
+    assert_eq!(
+        scan["result"]["devices"][0]["transport"], "wireless",
+        "wireless device should be first: {scan}"
+    );
+
+    let started = client.request(
+        5,
+        "session.start",
+        json!({"deviceId": format!("{phone_ip}:5555"), "settings": {"audio": false}}),
+    );
+    assert!(
+        started["result"]["sessionId"].is_string(),
+        "session did not start: {started}"
+    );
+    let events = client.drain(Duration::from_secs(3));
+    assert!(
+        events
+            .iter()
+            .any(|event| event["method"] == "session.state"
+                && event["params"]["state"] == "streaming"),
+        "no streaming event: {events:?}"
+    );
+    let args = std::fs::read_to_string(&args_file).expect("scrcpy args");
+    assert!(
+        args.contains(&format!("-s {phone_ip}:5555")),
+        "scrcpy did not use the Wi-Fi serial: {args}"
+    );
+
+    client.request(6, "session.stop", json!({}));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn usb_bootstrap_refuses_a_phone_on_another_network() {
+    let dir = temp_dir("other-network");
+    let state = dir.join("adb-state.txt");
+    let mut client = Client::spawn(&[
+        ("CASTPANE_ADB", bin("mock-adb-usb")),
+        ("CASTPANE_SCRCPY", bin("mock-scrcpy")),
+        ("CASTPANE_STATE_DIR", dir.display().to_string()),
+        ("MOCK_ADB_STATE_FILE", state.display().to_string()),
+        ("MOCK_USB_PHONE_IP", "10.0.0.5".to_string()),
+    ]);
+    client.request(1, "initialize", json!({}));
+    let scan = client.request(2, "action.wireless_scan", json!({}));
+    assert_eq!(scan["result"]["state"], "error");
+    assert!(
+        scan["result"]["status"]
+            .as_str()
+            .unwrap()
+            .contains("不在同一 Wi-Fi"),
+        "unexpected scan: {scan}"
+    );
+    let boot = client.request(3, "action.wireless_usb_bootstrap", json!({}));
+    assert_eq!(boot["result"]["ok"], false);
+    assert_eq!(boot["result"]["code"], "E_NETWORK");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn scan_without_any_device_explains_the_usb_first_setup() {
+    let dir = temp_dir("no-device");
+    let state = dir.join("adb-state.txt");
+    let mut client = Client::spawn(&[
+        ("CASTPANE_ADB", bin("mock-adb-usb")),
+        ("CASTPANE_SCRCPY", bin("mock-scrcpy")),
+        ("CASTPANE_STATE_DIR", dir.display().to_string()),
+        ("MOCK_ADB_STATE_FILE", state.display().to_string()),
+        ("MOCK_ADB_MODE", "none".to_string()),
+    ]);
+    client.request(1, "initialize", json!({}));
+    let scan = client.request(2, "action.wireless_scan", json!({}));
+    assert_eq!(scan["result"]["state"], "not-found");
+    assert!(
+        scan["result"]["status"]
+            .as_str()
+            .unwrap()
+            .contains("数据线"),
+        "unexpected scan: {scan}"
+    );
+    assert!(
+        scan["result"]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("开发人员选项"),
+        "hint should name the Huawei path: {scan}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_later_launch_reconnects_the_remembered_endpoint_without_a_click() {
+    let dir = temp_dir("reconnect");
+    let state = dir.join("adb-state.txt");
+    let phone_ip = local_phone_ip();
+
+    {
+        let mut client = Client::spawn(&[
+            ("CASTPANE_ADB", bin("mock-adb-usb")),
+            ("CASTPANE_SCRCPY", bin("mock-scrcpy")),
+            ("CASTPANE_STATE_DIR", dir.display().to_string()),
+            ("MOCK_ADB_STATE_FILE", state.display().to_string()),
+            ("MOCK_USB_PHONE_IP", phone_ip.clone()),
+            ("MOCK_ENGINE_SECONDS", "1".to_string()),
+        ]);
+        client.request(1, "initialize", json!({}));
+        let boot = client.request(2, "action.wireless_usb_bootstrap", json!({}));
+        assert_eq!(boot["result"]["ok"], true, "bootstrap failed: {boot}");
+        client.request(3, "shutdown", json!({}));
+    }
+
+    // Simulate the phone after a reboot/network change: tcpip is enabled but
+    // the wireless connection is gone; a fresh app launch must reconnect it.
+    std::fs::write(&state, "tcpip=1\nconnected=0\n").unwrap();
+
+    let mut client = Client::spawn(&[
+        ("CASTPANE_ADB", bin("mock-adb-usb")),
+        ("CASTPANE_SCRCPY", bin("mock-scrcpy")),
+        ("CASTPANE_STATE_DIR", dir.display().to_string()),
+        ("MOCK_ADB_STATE_FILE", state.display().to_string()),
+        ("MOCK_USB_PHONE_IP", phone_ip.clone()),
+    ]);
+    client.request(1, "initialize", json!({}));
+    let scan = client.request(2, "action.wireless_scan", json!({}));
+    assert_eq!(scan["result"]["state"], "ready", "scan: {scan}");
+    assert_eq!(scan["result"]["devices"][0]["transport"], "wireless");
+    assert_eq!(
+        scan["result"]["devices"][0]["endpoint"],
+        format!("{phone_ip}:5555")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

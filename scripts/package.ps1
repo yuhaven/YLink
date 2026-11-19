@@ -41,6 +41,9 @@ try {
 
         & cargo build --release -p castpane-plugin-android
         if ($LASTEXITCODE -ne 0) { throw "plugin build failed with $LASTEXITCODE" }
+
+        & cargo build --release -p castpane-plugin-airplay
+        if ($LASTEXITCODE -ne 0) { throw "airplay plugin build failed with $LASTEXITCODE" }
     }
 
     $confPath = Join-Path $RepoRoot 'apps/desktop/src-tauri/tauri.conf.json'
@@ -82,7 +85,14 @@ try {
     }
 
     Copy-Item (Join-Path $RepoRoot 'LICENSE') $dist
-    Copy-Item (Join-Path $RepoRoot 'README.md') $dist
+    # Root docs are linked from README; copy every root markdown file so the
+    # portable copy is self-contained. Filtering by a Chinese literal here is a
+    # trap: Windows PowerShell 5.1 reads this script as ANSI.
+    Get-ChildItem $RepoRoot -File -Filter '*.md' | Copy-Item -Destination $dist -Force
+    # Keep the delivery evidence with the portable build: README links into
+    # docs/, and the user should be able to open the acceptance steps offline.
+    $docs = Join-Path $RepoRoot 'docs'
+    if (Test-Path $docs) { Copy-Item $docs $dist -Recurse -Force }
 
     # Never ship a settings.json: it carries whatever the last test wrote
     # (a stale lockPosition=true made the cast window snap back when dragged).
@@ -91,6 +101,11 @@ try {
     $zip = Join-Path $RepoRoot "dist/CastPane-v$version-win64.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path "$dist/*" -DestinationPath $zip -CompressionLevel Optimal
+
+    # A checksum next to the zip makes "is this the build I tested?" verifiable
+    # without extracting 250 MB.
+    $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+    "$hash  $(Split-Path -Leaf $zip)" | Set-Content "$zip.sha256" -Encoding ASCII
 
     Write-Host ''
     Write-Host "portable folder : $dist"

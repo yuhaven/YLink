@@ -1,0 +1,33 @@
+{
+    "scenario":  "airplay",
+    "app":  "D:\\dsh\\hongguo\\dist\\CastPane\\CastPane.exe",
+    "passed":  true,
+    "error":  null,
+    "airplay":  {
+                    "state":  "airplay-waiting",
+                    "seconds_to_waiting":  3.61,
+                    "mdns_name":  "CastPane._airplay._tcp.local.",
+                    "mdns_port":  52913,
+                    "mdns_addresses":  [
+                                           "192.168.101.6",
+                                           "fe80::6b05:e37b:c95f:9ccb",
+                                           "2408:8234:910:1af0:a9aa:a373:33d0:21b1",
+                                           "2408:8234:910:1af0:4515:853:eb0e:9890"
+                                       ],
+                    "firewall_prompt_allowed":  false,
+                    "streaming_observed":  false,
+                    "note":  "No iPad on this network; video-window/streaming path awaits real iPad.",
+                    "seconds_to_stop":  0.85,
+                    "mdns_after_stop":  "gone",
+                    "second_start_seconds":  3.93,
+                    "second_stop_seconds":  1.01
+                },
+    "files":  null,
+    "screenshots":  [
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\home-airplay.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\airplay-waiting.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\airplay-stopped.png",
+                        "D:\\dsh\\hongguo\\build\\e2e-v03\\airplay-second-waiting.png"
+                    ],
+    "started":  "2026-11-16T20:22:47"
+}

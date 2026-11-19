@@ -88,25 +88,70 @@ core                          plugin
 | `session.stop` | `{sessionId}` | `{ok: true}` |
 | `settings.apply` | `{settings}` | `{ok: true}` |
 | `diagnose` | `{}` | `{checks: [{name, ok, detail, hint?}]}` |
-| `action.<name>` | `{}` | 任意 |
+| `action.<name>` | 任意对象，原样透传 | 任意 |
 | `shutdown` | `{}` | `{ok: true}` |
+
+### 7.1 Android 无线动作（v0.2）
+
+Android 插件额外实现以下 `action.*`。宿主用 `action(id, name, params)` 透传，不解释参数：
+
+| action | params | result |
+|---|---|---|
+| `wireless_scan` | `{}` | `WirelessSnapshot`（见 7.2） |
+| `wireless_connect` | `{deviceId}` | `ConnectResult`（连接已记住的 `ip:5555`） |
+| `wireless_usb_bootstrap` | `{}` | `ConnectResult`（USB 上执行 `tcpip 5555` + `connect`） |
+| `wireless_disconnect` | `{deviceId}` | `{ok: boolean}` |
+
+`ConnectResult = {ok, device?, status, hint?, code?, raw?}`。失败时 `code` 取值包括 `E_NO_USB`、`E_PERMISSION`、`E_NO_WIFI`、`E_NETWORK`、`E_TCPIP`、`E_CONNECT`、`E_USB_BOOTSTRAP`。
+
+### 7.2 `WirelessSnapshot`
+
+```json
+{
+  "state": "ready | usb | unauthorized | offline | not-found | error",
+  "status": "已连接 BRA AL00 · 同一 Wi-Fi",
+  "hint": "可以拔掉数据线，点「开始投屏」",
+  "devices": [
+    {
+      "id": "192.168.101.5:5555",
+      "name": "BRA AL00",
+      "transport": "wireless | usb",
+      "state": "ready | device | offline | unauthorized | discovered",
+      "detail": "已连接 · 同一 Wi-Fi",
+      "endpoint": "192.168.101.5:5555",
+      "lastSeen": 1794765601
+    }
+  ],
+  "localIp": "192.168.101.6",
+  "phoneIp": "192.168.101.5",
+  "sameNetwork": true,
+  "known": 1,
+  "diagnostics": ["电脑地址：192.168.101.6", "adb devices：1 台在线"]
+}
+```
+
+- `state=usb` 表示检测到 USB 手机，主按钮应调用 `wireless_usb_bootstrap`。
+- `state=offline` 表示记得上次 `ip:5555` 但当前不可达；提示用户手机重启/换网后需要重新插线。
+- `sameNetwork=false` 时不应尝试 `tcpip`，直接提示连接同一 Wi-Fi。
+- 已记住的端点存在 `%LOCALAPPDATA%\CastPane\android-wireless.json`；可用 `CASTPANE_STATE_DIR` 覆盖（测试隔离）。
 
 ### plugin → core（通知）
 
 | 方法 | params | 说明 |
 |---|---|---|
-| `device.found` | `{id, name, kind, detail?}` | `kind`: `android` / `ios` / `other` |
+| `device.found` | `{id, name, kind, detail?, transport?, endpoint?, label?}` | `kind`: `android` / `ios` / `other`；Android 额外带无线状态 |
 | `device.lost` | `{id}` | |
-| `session.state` | `{sessionId, state, error?}` | `state`: `connecting`/`streaming`/`stopped`/`error` |
+| `session.state` | `{sessionId, state, error?, reason?, hint?, ports?}` | `state`: `connecting`/`waiting`/`streaming`/`stopped`/`error`；`reason` 是给用户的一行原因 |
 | `window.report` | `{sessionId, handle, width, height}` | `handle` 为原生窗口句柄（Windows 为 HWND 十进制） |
+| `transfer.state` | `TransferView` | Android 文件传输进度；见 7.5 |
 | `log` | `{level, message}` | 写入日志面板 |
 
-### 7.1 无扫描类协议的约定
+### 7.3 无扫描类协议的约定
 
 AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`discover.start` 上报**本机接收端**作为一个伪设备：
 
 ```json
-{"id": "receiver", "name": "AirPlay 接收端", "kind": "ios", "detail": "ready"}
+{"id": "receiver", "name": "iPad / iPhone 投屏", "kind": "ios", "detail": "ready", "transport": "airplay"}
 ```
 
 `detail` 的取值宿主需要理解：
@@ -117,6 +162,84 @@ AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`disc
 | `ready` | 接收端可开会话 | 允许投屏 |
 | `unauthorized` / `offline` | 设备侧不可用 | 禁用投屏 |
 | `engine-missing` | 引擎缺失 | 禁用投屏并提示安装 |
+| `engine-incomplete` | 缺 GStreamer scanner/视频插件 | 禁用并提示修复 |
+| `bonjour-missing` | Bonjour 发现服务缺失/未运行 | 禁用并提示安装 |
+
+AirPlay 的 `session.state` 额外语义：
+
+| state | 用户可见含义 |
+|---|---|
+| `connecting` | 正在启动 uxplay / 加载视频组件 |
+| `waiting` | 接收端已启动并在 mDNS 广播，等待 iPad 选择本机 |
+| `streaming` | 已检测到 uxplay 的可见画面窗口（iPad 已连接） |
+| `stopped` | 用户停止，或引擎退出（`error` 字段有原因） |
+
+`waiting` 时 `ports` 可带接收端当前监听的 TCP 端口（uxplay 端口可能因占用而动态选择，不能假定 7000）。
+
+AirPlay 额外动作：
+
+| action | params | result |
+|---|---|---|
+| `install_bonjour` | `{}` | `{ok, detail}`；运行随包的 `mDNSResponder.exe -install`，需要一次 UAC |
+
+### 7.4 Android 文件互传动作（v0.3）
+
+| action | params | result |
+|---|---|---|
+| `files_list` | `{deviceId, path}` | `DirListing` |
+| `files_pull` | `{deviceId, paths[], localDir?}` | `{transferId}`（开始后台下载） |
+| `files_push` | `{deviceId, localPaths[], remoteDir}` | `{transferId}`（开始后台上传） |
+| `files_transfer` | `{transferId?}` | `TransferView` / `null` |
+| `files_open` | `{path}` | `{ok:true}`（打开电脑文件夹） |
+| `files_home` | `{}` | `{downloadDir, phoneRoot, phoneUploadDir}` |
+
+`DirListing`：
+
+```json
+{
+  "path": "/sdcard/Download",
+  "parent": "/sdcard",
+  "entries": [
+    {"name":"CastPane","path":"/sdcard/Download/CastPane","isDir":true,"size":3440,"modified":"2026-11-16 19:43","kind":"folder"},
+    {"name":"demo.mp4","path":"/sdcard/Download/demo.mp4","isDir":false,"size":10485760,"modified":"2026-11-16 19:20","kind":"video"}
+  ],
+  "restricted": false
+}
+```
+
+- 只允许 `/sdcard`、`/storage/emulated/0` 及其子目录；拒绝 `..`。
+- 列目录时后端自动补尾斜杠（`ls -la /sdcard/`），否则 toybox 会把 `/sdcard` 这个 symlink 本身当成一项返回。
+- `kind`: `folder` / `image` / `video` / `doc` / `audio` / `archive` / `file`。
+- `/sdcard/Android/data`、`/sdcard/Android/obb` 直接返回 `E_PERMISSION` 与换目录提示。
+
+### 7.5 `TransferView` 与传输进度
+
+```json
+{
+  "id": "pull-1794829513632",
+  "direction": "pull",
+  "name": "demo.mp4",
+  "state": "running | done | error",
+  "bytes": 6619133,
+  "total": 10485760,
+  "percent": 63.1,
+  "speed": 12827410.6,
+  "localPath": "C:\\Users\\me\\Downloads\\CastPane\\demo.mp4",
+  "remotePath": "/sdcard/Download/CastPane/demo.mp4",
+  "error": null,
+  "hint": null,
+  "startedAt": 1794829513632,
+  "finishedAt": null,
+  "filesDone": 0,
+  "filesTotal": 1
+}
+```
+
+- `transfer.state` 在传输线程中推送；宿主通过 `poll_events` 转发给 UI。
+- 进度来自目标文件大小的轮询，不依赖 adb 的 stdout（adb 只在结束时打印一行）。
+- 同名文件自动改名 `name (1).ext`，不覆盖。
+- 完成后校验大小；失败保留已传部分，`localPath`/`remotePath` 仍指向它。
+- 同一时间只允许一个传输；忙时返回 `E_BUSY`。
 
 ## 8. 错误约定
 ```json
@@ -131,6 +254,7 @@ AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`disc
 - `message` 说明**发生了什么**，`hint` 说明**用户该做什么**
 - 没有 `hint` 的错误视为程序缺陷，会在诊断面板标红
 - 保留码：`E_NO_DEVICE`、`E_PERMISSION`、`E_FIREWALL`、`E_PORT_BUSY`、`E_ENGINE_MISSING`、`E_UNSUPPORTED`
+- v0.3 新增：`E_SCANNER_MISSING`、`E_PLUGIN_MISSING`、`E_BONJOUR_MISSING`、`E_BONJOUR_STOPPED`、`E_ALREADY_RUNNING`、`E_BUSY`、`E_PATH`、`E_NOT_FOUND`、`E_NO_SPACE`、`E_VERIFY`、`E_OFFLINE`、`E_TIMEOUT`
 
 ## 9. 窗口接管
 
@@ -147,10 +271,10 @@ AirPlay、Miracast 接收端不存在"扫描发送端"的概念。约定：`disc
 
 | 插件 | 做法 |
 |---|---|
-| android | scrcpy 原生支持 `--window-x/y/width/height --window-borderless --always-on-top`，**不需要接管** |
-| airplay | uxplay 无窗口参数，插件按子进程 PID 枚举顶层窗口后 `SetWindowLongPtrW` 去边框 + `SetWindowPos` 摆位（`crates/plugin-airplay/src/window.rs`） |
+| android | scrcpy 原生支持 `--window-x/y/width/height --window-borderless`，**不需要接管** |
+| airplay | uxplay 无窗口参数，插件按子进程 PID 枚举**可见画面窗口**后 `SetWindowTextW` 改名 + `SetWindowPos` 摆位（`crates/plugin-airplay/src/window.rs`）。不改跨进程窗口样式，保留原生标题栏 |
 
-接管是 best effort：8 秒内找不到窗口就放弃，接收端照常运行，只在日志里留一条 warn。
+AirPlay 的可见窗口只在客户端连接后才出现，因此插件以「窗口出现」作为 `streaming` 的判据，窗口消失回到 `waiting`。接收端自身是托盘程序，主窗口隐藏，不会被误当成画面窗口。
 
 ## 10. 安全模型
 
